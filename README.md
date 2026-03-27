@@ -8,6 +8,8 @@ Assistant IA local orienté orchestration (Windows-first) avec Ollama, UI deskto
 python -m venv .venv
 . .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+python janova_desktop.py
+# ou
 python janova_app.py
 ```
 
