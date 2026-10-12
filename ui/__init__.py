@@ -1,1 +1,0 @@
-"""JANOVA UI package."""

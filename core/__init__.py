@@ -1,1 +1,0 @@
-"""JANOVA core package."""
