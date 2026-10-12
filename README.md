@@ -11,6 +11,8 @@ Le noyau d'une IA locale qui naît presque vide et apprend de son entourage, les
 ```bash
 # 1. Un professeur local (facultatif mais nécessaire pour apprendre)
 ollama pull mistral
+# et un petit modèle de sens (46 Mo, facultatif) pour reconnaître les demandes reformulées
+ollama pull all-minilm
 
 # 2. JANOVA
 python -m janova                 # mode conversation
@@ -30,7 +32,7 @@ La mémoire est dans `~/.janova/` (ou dans le dossier `JANOVA_HOME`). Les régla
 ## Comment elle traite une demande
 
 1. **Commande** (`/aide`, `/etat`, `/bon`, `/mauvais`, `/verifier`…).
-2. **Compétence connue** : elle exécute le code qu'elle a appris, dans un bac à sable, sans LLM.
+2. **Compétence connue** : elle exécute le code qu'elle a appris, dans un bac à sable, sans LLM. Elle reconnaît la demande à ses mots et, si le modèle de sens est disponible, à son sens : « Quelle température en Fahrenheit pour 25 °C ? » retrouve la compétence apprise avec « convertis 20 celsius en fahrenheit ».
 3. **Connaissance connue** : elle répond de mémoire, sans LLM.
 4. **Sinon, elle demande à son entourage** et apprend :
    - *compétence* : un professeur écrit un programme et ses tests. JANOVA exécute les tests et renvoie les erreurs au professeur jusqu'à ce que tout passe (3 essais au maximum). Le code n'est gardé que s'il est correct ;
@@ -47,7 +49,8 @@ La mémoire est dans `~/.janova/` (ou dans le dossier `JANOVA_HOME`). Les régla
 | `janova/store.py` | La mémoire (compétences, connaissances, épisodes) et le journal chaîné |
 | `janova/sandbox.py` | L'exécution isolée des compétences apprises |
 | `janova/teachers.py` | L'entourage : les professeurs LLM et le consensus |
-| `janova/text.py` | La comparaison de textes sans modèle |
+| `janova/meaning.py` | La comparaison par le sens (petit modèle d'embeddings, vecteurs gardés en cache) |
+| `janova/text.py` | La comparaison par les mots, sans modèle |
 | `janova/config.py` | Les réglages |
 | `janova/__main__.py` | L'interface texte |
 
@@ -60,13 +63,13 @@ python -m unittest discover -s tests
 ## Limites connues
 
 - Le bac à sable (analyse du code, processus séparé, limites de temps et de mémoire) est un garde-fou raisonnable, pas une prison parfaite.
-- Pour reconnaître une demande, la comparaison des mots est simple. Une formulation très différente d'une compétence connue repassera par un professeur, qui ajoutera un exemple.
+- Le modèle de sens rapproche les demandes de même sujet, pas forcément de même sens exact : « 20 °F en Celsius » peut ressembler à une compétence « Celsius vers Fahrenheit ». Le seuil `meaning_threshold` (0,8 par défaut, dans `config.json`) règle cette prudence, et `/mauvais` corrige les erreurs.
+- Sans modèle de sens, la reconnaissance se fait par les mots seulement. Une formulation très différente repasse alors par un professeur.
 - Les licences d'OpenAI, d'Anthropic, de Google… interdisent d'entraîner un modèle concurrent avec leurs réponses. Le jour où JANOVA entraînera son propre petit modèle, il faudra n'utiliser que des professeurs dont la licence le permet.
 
 ## Prochaines étapes
 
-1. Reconnaître les demandes par le sens (petit modèle d'embeddings local) plutôt que par les mots.
-2. Laisser JANOVA combiner plusieurs compétences pour résoudre une tâche nouvelle.
-3. Entraîner un petit cerveau à elle (0,5 à 2 Go) sur ses propres épisodes.
-4. Synchroniser les connaissances entre appareils (nœud léger qui télécharge à la demande et vérifie par empreinte).
-5. Ajouter les sens et les actions d'un robot : voix, caméra, moteurs.
+1. Laisser JANOVA combiner plusieurs compétences pour résoudre une tâche nouvelle.
+2. Entraîner un petit cerveau à elle (0,5 à 2 Go) sur ses propres épisodes.
+3. Synchroniser les connaissances entre appareils (nœud léger qui télécharge à la demande et vérifie par empreinte).
+4. Ajouter les sens et les actions d'un robot : voix, caméra, moteurs.

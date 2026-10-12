@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 DEFAULT_TEACHERS = [{"type": "ollama", "model": "mistral", "url": "http://127.0.0.1:11434"}]
+DEFAULT_EMBEDDER = {"type": "ollama", "model": "all-minilm", "url": "http://127.0.0.1:11434"}
 
 
 @dataclass
@@ -14,8 +15,10 @@ class Config:
 
     home: Path
     teachers: list[dict] = field(default_factory=lambda: [dict(t) for t in DEFAULT_TEACHERS])
+    embedder: dict | None = field(default_factory=lambda: dict(DEFAULT_EMBEDDER))
     skill_match_threshold: float = 0.55
     fact_match_threshold: float = 0.6
+    meaning_threshold: float = 0.8
     sandbox_timeout: float = 5.0
     teacher_timeout: float = 120.0
     max_learning_attempts: int = 3
@@ -37,10 +40,11 @@ def load_config(home: str | os.PathLike | None = None) -> Config:
     config = Config(home=root)
 
     path = root / "config.json"
-    if path.exists():
-        for key, value in json.loads(path.read_text(encoding="utf-8")).items():
-            if key != "home" and hasattr(config, key):
-                setattr(config, key, value)
-    else:
+    saved = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    for key, value in saved.items():
+        if key != "home" and hasattr(config, key):
+            setattr(config, key, value)
+    if set(config.editable()) - set(saved):
+        # Nouveaux réglages apparus avec une mise à jour : on les ajoute au fichier pour qu'ils soient visibles.
         path.write_text(json.dumps(config.editable(), ensure_ascii=False, indent=2), encoding="utf-8")
     return config

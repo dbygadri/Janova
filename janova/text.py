@@ -6,9 +6,6 @@ import math
 import re
 import unicodedata
 from collections import Counter
-from typing import Iterable, TypeVar
-
-K = TypeVar("K")
 
 STOPWORDS = {
     "a", "au", "aux", "avec", "c", "ce", "ces", "cette", "d", "dans", "de", "des", "du", "elle", "en", "est",
@@ -42,15 +39,6 @@ def similarity(a: str, b: str) -> float:
         return 0.0
     dot = sum(ca[t] * cb[t] for t in ca)
     return dot / (math.sqrt(sum(v * v for v in ca.values())) * math.sqrt(sum(v * v for v in cb.values())))
-
-
-def best_match(query: str, candidates: Iterable[tuple[K, str]]) -> tuple[K | None, float]:
-    best_key, best_score = None, 0.0
-    for key, text in candidates:
-        score = similarity(query, text)
-        if score > best_score:
-            best_key, best_score = key, score
-    return best_key, best_score
 
 
 def same_answer(a: str, b: str) -> bool:

@@ -15,10 +15,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from janova.config import Config
+from janova.meaning import Meaning, build_embedder
 from janova.sandbox import ALLOWED_IMPORTS, run_skill
 from janova.store import Skill, Store
 from janova.teachers import Entourage, TeacherError, build_teachers, extract_json
-from janova.text import best_match, same_answer
+from janova.text import same_answer, similarity
 
 AUTONOMOUS_ROUTES = ("competence", "memoire")
 SKILL_ROUTES = ("competence", "apprend-competence")
@@ -69,6 +70,9 @@ HELP = """Commandes :
   /professeurs       l'entourage configuré"""
 
 
+_DEFAULT = object()
+
+
 @dataclass
 class Reply:
     text: str
@@ -76,10 +80,13 @@ class Reply:
 
 
 class Janova:
-    def __init__(self, config: Config, entourage: Entourage | None = None, store: Store | None = None) -> None:
+    def __init__(
+        self, config: Config, entourage: Entourage | None = None, store: Store | None = None, embedder=_DEFAULT
+    ) -> None:
         self.config = config
         self.store = store or Store(config.db_path)
         self.entourage = entourage or Entourage(build_teachers(config.teachers, config.teacher_timeout))
+        self.meaning = Meaning(build_embedder(config.embedder) if embedder is _DEFAULT else embedder, self.store)
 
     def close(self) -> None:
         self.store.close()
@@ -99,12 +106,32 @@ class Janova:
         self.store.add_episode(message, reply.text, reply.route, ref)
         return reply
 
+    # --- Reconnaissance : mots et sens --------------------------------------------------------
+
+    def _recognize(self, message: str, candidates: list[tuple], word_threshold: float):
+        """Renvoie la clé du candidat le plus proche de `message`, ou None si aucun n'est assez proche.
+
+        Chaque candidat est jugé sur ses mots et, si le modèle de sens répond, sur son sens. On garde
+        celui qui dépasse le plus nettement l'un de ses deux seuils.
+        """
+        if not candidates:
+            return None
+        meanings = self.meaning.similarities(message, [text for _, text in candidates])
+        best_key, best_margin = None, 1.0
+        for i, (key, text) in enumerate(candidates):
+            margin = similarity(message, text) / word_threshold
+            if meanings is not None:
+                margin = max(margin, meanings[i] / self.config.meaning_threshold)
+            if margin >= best_margin:
+                best_key, best_margin = key, margin
+        return best_key
+
     # --- 2. Compétences -------------------------------------------------------------------------
 
     def _from_skill(self, message: str) -> tuple[Reply | None, int | None]:
         candidates = [(s, example) for s in self.store.skills() for example in s.examples]
-        skill, score = best_match(message, candidates)
-        if skill is None or score < self.config.skill_match_threshold:
+        skill = self._recognize(message, candidates, self.config.skill_match_threshold)
+        if skill is None:
             return None, None
         result = run_skill(skill.code, [message], self.config.sandbox_timeout)[0]
         if not result.ok or not result.output.strip():
@@ -121,8 +148,8 @@ class Janova:
     # --- 3. Connaissances -----------------------------------------------------------------------
 
     def _from_memory(self, message: str) -> tuple[Reply | None, int | None]:
-        fact, score = best_match(message, [(f, f.question) for f in self.store.facts()])
-        if fact is None or score < self.config.fact_match_threshold:
+        fact = self._recognize(message, [(f, f.question) for f in self.store.facts()], self.config.fact_match_threshold)
+        if fact is None:
             return None, None
         return Reply(fact.answer + self._confidence_note(fact.sources, fact.agreement), "memoire"), fact.id
 
@@ -262,7 +289,14 @@ class Janova:
         total = sum(counts.get(r, 0) for r in LEARNING_ROUTES)
         alone = sum(counts.get(r, 0) for r in AUTONOMOUS_ROUTES)
         rate = f"{100 * alone / total:.0f} %" if total else "—"
+        if self.meaning.active:
+            sense = f"par le sens ({self.meaning.embedder.name}) et par les mots"
+        elif self.meaning.embedder is not None:
+            sense = f"par les mots seulement ({self.meaning.error})"
+        else:
+            sense = "par les mots seulement (aucun modèle de sens configuré)"
         return (
+            f"Reconnaissance : {sense}\n"
             f"Compétences : {len(self.store.skills())}\n"
             f"Connaissances : {len(self.store.facts())}\n"
             f"Demandes traitées : {total}, dont {alone} sans aucun LLM\n"

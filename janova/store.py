@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from array import array
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,9 @@ CREATE TABLE IF NOT EXISTS skills (
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL, answer_sha TEXT NOT NULL,
     sources INTEGER NOT NULL, agreement REAL NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS vectors (
+    model TEXT NOT NULL, text_sha TEXT NOT NULL, vector BLOB NOT NULL, PRIMARY KEY (model, text_sha)
 );
 CREATE TABLE IF NOT EXISTS episodes (
     id INTEGER PRIMARY KEY, at TEXT NOT NULL, request TEXT NOT NULL, answer TEXT NOT NULL,
@@ -208,6 +212,26 @@ class Store:
             if changed:
                 self.record("fact_forgotten", fact_id=fact_id, reason=reason)
         return bool(changed)
+
+    # --- Vecteurs de sens (cache) ---------------------------------------------------------------
+
+    def get_vectors(self, model: str, text_shas: list[str]) -> dict[str, list[float]]:
+        found = {}
+        for i in range(0, len(text_shas), 500):
+            chunk = text_shas[i: i + 500]
+            rows = self.db.execute(
+                f"SELECT text_sha, vector FROM vectors WHERE model = ? AND text_sha IN ({','.join('?' * len(chunk))})",
+                (model, *chunk),
+            )
+            found.update((r["text_sha"], array("f", r["vector"]).tolist()) for r in rows)
+        return found
+
+    def put_vectors(self, model: str, vectors: dict[str, list[float]]) -> None:
+        with self.db:
+            self.db.executemany(
+                "INSERT OR REPLACE INTO vectors (model, text_sha, vector) VALUES (?, ?, ?)",
+                [(model, key, array("f", vector).tobytes()) for key, vector in vectors.items()],
+            )
 
     # --- Épisodes (ce qui s'est passé) ----------------------------------------------------------
 
