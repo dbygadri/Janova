@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from janova.cerveau import Brain, user_section
 from janova.config import load_config
 from janova.core import Janova
 from janova.meaning import EmbedderError
@@ -244,6 +245,89 @@ class MeaningTest(BaseCase):
         self.assertEqual(janova.handle("convertis 30 celsius en fahrenheit").route, "competence")
         self.assertEqual(embedder.calls, 1)
         self.assertIn("par les mots seulement (injoignable)", janova.handle("/etat").text)
+
+
+FAHRENHEIT_CODE = CELSIUS_CODE.replace("valeur * 9 / 5 + 32", "(valeur - 32) * 5 / 9").replace("°F", "°C")
+
+
+class BrainTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.store = Store(self.root / "j.db")
+        self.celsius = self.store.add_skill("celsius_vers_fahrenheit", "Convertit des degrés Celsius en Fahrenheit",
+                                            CELSIUS_CODE, ["convertis 20 celsius en fahrenheit"], teacher="t")
+        self.fahrenheit = self.store.add_skill("fahrenheit_vers_celsius", "Convertit des degrés Fahrenheit en Celsius",
+                                               FAHRENHEIT_CODE, ["convertis 70 fahrenheit en celsius"], teacher="t")
+        self.fact = self.store.add_fact("Quelle est la capitale de la France ?", "Paris.", sources=2, agreement=1.0)
+        self.brain = Brain(self.store, self.root / "cerveau")
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def note(self, key):
+        return next((self.root / "cerveau").glob(f"*/{key} *.md"))
+
+    def test_writes_linked_notes_and_graph(self):
+        summary = self.brain.sync()
+        self.assertEqual((summary.notes, summary.links), (3, 1))
+        celsius = self.note("c1").read_text(encoding="utf-8")
+        self.assertTrue(celsius.startswith("---\njanova: competence"))
+        self.assertIn("[[c2 fahrenheit_vers_celsius]] · proche", celsius)
+        self.assertIn("(aucun)", self.note("f1").read_text(encoding="utf-8"))
+        self.assertIn("[[f1 Quelle est la capitale de la France]]",
+                      (self.root / "cerveau" / "Janova.md").read_text(encoding="utf-8"))
+        graph = (self.root / "cerveau" / "graphe.html").read_text(encoding="utf-8")
+        self.assertIn('"kind": "proche"', graph)
+        self.assertNotIn("/*DATA*/null", graph)
+
+    def test_keeps_user_notes_follows_their_links_and_journals_them(self):
+        self.brain.sync()
+        path = self.note("f1")
+        path.write_text(path.read_text(encoding="utf-8") + "Vue en 2019, voir [[c1]].\n", encoding="utf-8")
+        self.assertEqual(self.brain.sync().links, 2)
+        text = self.note("f1").read_text(encoding="utf-8")
+        self.assertEqual(user_section(text), "Vue en 2019, voir [[c1]].")
+        self.assertIn("lien de tes notes", text)
+        self.assertEqual(self.store.notes(), {"f1": "Vue en 2019, voir [[c1]]."})
+        self.assertEqual(self.store.verify(), [])
+
+        # Le dossier peut être effacé : les notes reviennent depuis la mémoire.
+        for file in (self.root / "cerveau").rglob("*.md"):
+            file.unlink()
+        self.brain.sync()
+        self.assertEqual(user_section(self.note("f1").read_text(encoding="utf-8")), "Vue en 2019, voir [[c1]].")
+
+        self.store.db.execute("UPDATE notes SET text = 'falsifié', text_sha = 'x'")
+        self.assertTrue(any("Note f1" in p for p in self.store.verify()))
+
+    def test_removes_notes_of_forgotten_items(self):
+        self.brain.sync()
+        self.store.disable_skill(self.fahrenheit.id, "test")
+        self.brain.sync()
+        self.assertEqual(list((self.root / "cerveau").glob("*/c2 *.md")), [])
+        self.assertIn("(aucun)", self.note("c1").read_text(encoding="utf-8"))
+
+    def test_chosen_links_are_journaled(self):
+        self.assertTrue(self.store.add_link("f1", "c1"))
+        self.assertFalse(self.store.add_link("c1", "f1"))
+        self.brain.sync()
+        self.assertIn("lien choisi", self.note("f1").read_text(encoding="utf-8"))
+        self.assertTrue(self.store.remove_link("c1", "f1"))
+        self.assertEqual([r["kind"] for r in self.store.journal(2)], ["link_removed", "link_added"])
+        self.assertEqual(self.store.verify(), [])
+
+
+class BrainCommandsTest(BaseCase):
+    def test_learning_updates_brain_and_commands_work(self):
+        janova = self.make(FakeTeacher())
+        janova.handle("convertis 20 celsius en fahrenheit")
+        self.assertTrue(list(self.config.brain_dir.glob("competences/c1 *.md")), "le cerveau suit l'apprentissage")
+        self.assertIn("1 notes reliées par 0 liens", janova.handle("/cerveau").text)
+        self.assertIn("n'est relié à rien", janova.handle("/liens c1").text)
+        self.assertIn("Introuvable : f9", janova.handle("/lier c1 f9").text)
+        self.assertIn("Utilisation", janova.handle("/lier c1").text)
 
 
 class JsonTest(unittest.TestCase):

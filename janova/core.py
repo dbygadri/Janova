@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from janova.cerveau import KEY, LINK_LABELS, Brain, neighbours_of
 from janova.config import Config
 from janova.meaning import Meaning, build_embedder
 from janova.sandbox import ALLOWED_IMPORTS, run_skill
@@ -65,6 +66,9 @@ HELP = """Commandes :
   /connaissances     liste des connaissances apprises
   /bon  /mauvais     ton avis sur la dernière réponse (elle en tient compte)
   /oublie c<id>      oublier une compétence (ex. /oublie c3) ; /oublie f<id> pour une connaissance
+  /cerveau           mettre à jour le cerveau (notes reliées, à ouvrir dans Obsidian ou graphe.html)
+  /liens c<id>       les éléments reliés à une compétence (ou f<id> pour une connaissance)
+  /lier c1 f2        relier deux éléments ; /delier c1 f2 pour défaire le lien
   /journal           les derniers apprentissages inscrits dans le journal chaîné
   /verifier          vérifier que rien n'a été modifié en douce
   /professeurs       l'entourage configuré"""
@@ -87,6 +91,7 @@ class Janova:
         self.store = store or Store(config.db_path)
         self.entourage = entourage or Entourage(build_teachers(config.teachers, config.teacher_timeout))
         self.meaning = Meaning(build_embedder(config.embedder) if embedder is _DEFAULT else embedder, self.store)
+        self.brain = Brain(self.store, config.brain_dir, config.brain_neighbours, config.brain_link_threshold)
 
     def close(self) -> None:
         self.store.close()
@@ -95,16 +100,30 @@ class Janova:
         message = message.strip()
         if not message:
             return Reply("", "commande")
+        head = self.store.head()
         if message.startswith("/"):
-            return Reply(self._command(message), "commande")
-
-        reply, ref = self._from_skill(message)
-        if reply is None:
-            reply, ref = self._from_memory(message)
-        if reply is None:
-            reply, ref = self._from_entourage(message)
-        self.store.add_episode(message, reply.text, reply.route, ref)
+            reply = Reply(self._command(message), "commande")
+        else:
+            reply, ref = self._from_skill(message)
+            if reply is None:
+                reply, ref = self._from_memory(message)
+            if reply is None:
+                reply, ref = self._from_entourage(message)
+            self.store.add_episode(message, reply.text, reply.route, ref)
+        if self.config.brain_autosync and self.store.head() != head:
+            self.sync_brain()  # quelque chose a été appris ou oublié : le cerveau suit
         return reply
+
+    def sync_brain(self) -> str:
+        try:
+            summary = self.brain.sync()
+        except OSError as exc:
+            return f"Impossible d'écrire le cerveau dans {self.brain.folder} : {exc}"
+        return (
+            f"Cerveau à jour : {summary.notes} notes reliées par {summary.links} liens.\n"
+            f"Dossier : {summary.folder} (à ouvrir comme coffre dans Obsidian)\n"
+            f"Vue graphe : {summary.folder / 'graphe.html'}"
+        )
 
     # --- Reconnaissance : mots et sens --------------------------------------------------------
 
@@ -277,6 +296,12 @@ class Janova:
             if not rows:
                 return "Journal vide."
             return "\n".join(f"#{r['id']} {r['at']} {r['kind']} {r['payload']}  [{r['hash'][:12]}]" for r in rows)
+        if name == "cerveau":
+            return self.sync_brain()
+        if name == "liens":
+            return self._links(arg)
+        if name in ("lier", "delier"):
+            return self._link(arg, add=name == "lier")
         if name == "verifier":
             problems = self.store.verify()
             return "Intégrité vérifiée : rien n'a été modifié." if not problems else "\n".join(problems)
@@ -330,3 +355,29 @@ class Janova:
         if arg[0] == "c":
             return "Compétence oubliée." if self.store.disable_skill(item_id, "demande de l'utilisateur") else "Introuvable."
         return "Connaissance oubliée." if self.store.forget_fact(item_id, "demande de l'utilisateur") else "Introuvable."
+
+    def _keys(self) -> dict[str, str]:
+        return {f"c{s.id}": s.name for s in self.store.skills()} | {f"f{f.id}": f.question for f in self.store.facts()}
+
+    def _links(self, arg: str) -> str:
+        keys = self._keys()
+        if arg not in keys:
+            return "Utilisation : /liens c<id> ou /liens f<id> (voir /competences et /connaissances)."
+        _, links = self.brain.graph()
+        related = neighbours_of(arg, links)
+        if not related:
+            return f"« {keys[arg]} » n'est relié à rien pour l'instant."
+        return f"{arg}  {keys[arg]}\n" + "\n".join(f"  → {k}  {keys[k]} ({LINK_LABELS[kind]})" for k, kind in related)
+
+    def _link(self, arg: str, add: bool) -> str:
+        parts = arg.split()
+        keys = self._keys()
+        if len(parts) != 2 or not all(KEY.match(p) for p in parts) or parts[0] == parts[1]:
+            return "Utilisation : /lier c1 f2 (ou /delier c1 f2)."
+        missing = [p for p in parts if p not in keys]
+        if missing:
+            return f"Introuvable : {', '.join(missing)}."
+        a, b = parts
+        if add:
+            return f"Relié : {keys[a]} ↔ {keys[b]}." if self.store.add_link(a, b) else "Ces deux éléments sont déjà reliés."
+        return "Lien défait." if self.store.remove_link(a, b) else "Il n'y avait pas de lien choisi entre eux."

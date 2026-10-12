@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS facts (
 CREATE TABLE IF NOT EXISTS vectors (
     model TEXT NOT NULL, text_sha TEXT NOT NULL, vector BLOB NOT NULL, PRIMARY KEY (model, text_sha)
 );
+CREATE TABLE IF NOT EXISTS links (
+    src TEXT NOT NULL, dst TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (src, dst)
+);
+CREATE TABLE IF NOT EXISTS notes (
+    key TEXT PRIMARY KEY, text TEXT NOT NULL, text_sha TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS episodes (
     id INTEGER PRIMARY KEY, at TEXT NOT NULL, request TEXT NOT NULL, answer TEXT NOT NULL,
     route TEXT NOT NULL, ref INTEGER, feedback INTEGER
@@ -102,6 +108,11 @@ class Store:
         )
         return digest
 
+    def head(self) -> str:
+        """Empreinte de la dernière entrée du journal : elle change à chaque apprentissage ou oubli."""
+        row = self.db.execute("SELECT hash FROM journal ORDER BY id DESC LIMIT 1").fetchone()
+        return row["hash"] if row else GENESIS
+
     def journal(self, limit: int = 20) -> list[sqlite3.Row]:
         return self.db.execute("SELECT * FROM journal ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
@@ -111,6 +122,7 @@ class Store:
         prev_hash = GENESIS
         learned_skills: dict[int, str] = {}
         learned_facts: dict[int, str] = {}
+        learned_notes: dict[str, str] = {}
         for row in self.db.execute("SELECT * FROM journal ORDER BY id"):
             if row["prev_hash"] != prev_hash:
                 problems.append(f"Journal : chaîne rompue à l'entrée {row['id']}.")
@@ -125,6 +137,8 @@ class Store:
                 learned_skills[payload.get("skill_id")] = payload.get("code_sha")
             elif row["kind"] == "fact_learned":
                 learned_facts[payload.get("fact_id")] = payload.get("answer_sha")
+            elif row["kind"] == "note_edited":
+                learned_notes[payload.get("key")] = payload.get("text_sha")
 
         for row in self.db.execute("SELECT id, name, code, code_sha FROM skills WHERE active = 1"):
             if sha(row["code"]) != row["code_sha"] or learned_skills.get(row["id"]) != row["code_sha"]:
@@ -132,6 +146,9 @@ class Store:
         for row in self.db.execute("SELECT id, answer, answer_sha FROM facts"):
             if sha(row["answer"]) != row["answer_sha"] or learned_facts.get(row["id"]) != row["answer_sha"]:
                 problems.append(f"Connaissance {row['id']} : réponse différente de celle apprise.")
+        for row in self.db.execute("SELECT key, text, text_sha FROM notes"):
+            if sha(row["text"]) != row["text_sha"] or learned_notes.get(row["key"]) != row["text_sha"]:
+                problems.append(f"Note {row['key']} : texte différent de celui inscrit au journal.")
         return problems
 
     # --- Compétences ----------------------------------------------------------------------------
@@ -212,6 +229,54 @@ class Store:
             if changed:
                 self.record("fact_forgotten", fact_id=fact_id, reason=reason)
         return bool(changed)
+
+    # --- Cerveau : liens choisis et notes personnelles -------------------------------------------
+    # Les clés désignent un élément du cerveau : c<id> pour une compétence, f<id> pour une connaissance.
+
+    @staticmethod
+    def _pair(a: str, b: str) -> tuple[str, str]:
+        return (a, b) if a <= b else (b, a)
+
+    def add_link(self, a: str, b: str) -> bool:
+        src, dst = self._pair(a, b)
+        with self.db:
+            changed = self.db.execute(
+                "INSERT OR IGNORE INTO links (src, dst, created_at) VALUES (?, ?, ?)", (src, dst, now())
+            ).rowcount
+            if changed:
+                self.record("link_added", src=src, dst=dst)
+        return bool(changed)
+
+    def remove_link(self, a: str, b: str) -> bool:
+        src, dst = self._pair(a, b)
+        with self.db:
+            changed = self.db.execute("DELETE FROM links WHERE src = ? AND dst = ?", (src, dst)).rowcount
+            if changed:
+                self.record("link_removed", src=src, dst=dst)
+        return bool(changed)
+
+    def links(self) -> list[tuple[str, str]]:
+        return [(r["src"], r["dst"]) for r in self.db.execute("SELECT src, dst FROM links ORDER BY src, dst")]
+
+    def notes(self) -> dict[str, str]:
+        return {r["key"]: r["text"] for r in self.db.execute("SELECT key, text FROM notes")}
+
+    def set_note(self, key: str, text: str) -> bool:
+        """Enregistre la note personnelle d'un élément (vide = supprimée). Renvoie True si elle a changé."""
+        text = text.strip()
+        if self.notes().get(key, "") == text:
+            return False
+        text_sha = sha(text)
+        with self.db:
+            if text:
+                self.db.execute(
+                    "INSERT OR REPLACE INTO notes (key, text, text_sha, updated_at) VALUES (?, ?, ?, ?)",
+                    (key, text, text_sha, now()),
+                )
+            else:
+                self.db.execute("DELETE FROM notes WHERE key = ?", (key,))
+            self.record("note_edited", key=key, text_sha=text_sha)
+        return True
 
     # --- Vecteurs de sens (cache) ---------------------------------------------------------------
 

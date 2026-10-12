@@ -23,10 +23,17 @@ class Config:
     teacher_timeout: float = 120.0
     max_learning_attempts: int = 3
     history_size: int = 6
+    brain_autosync: bool = True
+    brain_neighbours: int = 3
+    brain_link_threshold: float = 0.3
 
     @property
     def db_path(self) -> Path:
         return self.home / "janova.db"
+
+    @property
+    def brain_dir(self) -> Path:
+        return self.home / "cerveau"
 
     def editable(self) -> dict:
         data = asdict(self)

@@ -17,6 +17,8 @@ def main() -> None:
 
     config = load_config(args.home)
     janova = Janova(config)
+    if config.brain_autosync:
+        janova.sync_brain()  # relit les notes que tu as pu modifier pendant que JANOVA dormait
     try:
         if args.message:
             print(janova.handle(" ".join(args.message)).text)

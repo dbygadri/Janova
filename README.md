@@ -39,6 +39,26 @@ La mémoire est dans `~/.janova/` (ou dans le dossier `JANOVA_HOME`). Les régla
    - *connaissance* : elle pose la question à **tous** les professeurs et ne mémorise la réponse que si la majorité est d'accord ;
    - *conversation* : elle répond, sans rien mémoriser comme vérité.
 
+## Son cerveau, façon Obsidian
+
+Tout ce que JANOVA apprend devient une **note Markdown reliée aux autres**, dans `~/.janova/cerveau/` :
+
+```
+cerveau/
+├── Janova.md                 la note d'accueil
+├── graphe.html               la vue graphe, à ouvrir dans n'importe quel navigateur (téléphone compris)
+├── competences/c1 celsius_vers_fahrenheit.md
+└── connaissances/f1 Quelle est la capitale de la France.md
+```
+
+Ouvre ce dossier comme coffre dans **Obsidian** (ou Logseq) pour naviguer dans ses connaissances, ou ouvre simplement `graphe.html`, qui fonctionne sans rien installer. Les liens viennent de trois sources :
+
+- **proche** : JANOVA relie d'elle-même ce qui parle de la même chose ;
+- **lien choisi** : `/lier c1 f2`, inscrit au journal chaîné ;
+- **tes notes** : la section « Mes notes » de chaque note est à toi. JANOVA la garde même si le dossier est effacé, l'inscrit au journal (donc `/verifier` la protège) et suit les `[[liens]]` que tu y écris.
+
+Le cerveau se met à jour tout seul à chaque apprentissage et à chaque démarrage ; `/cerveau` le force. SQLite reste la mémoire de référence : le reste de chaque note est régénéré à partir d'elle.
+
 `/etat` affiche son **taux d'autonomie**, c'est-à-dire la part des demandes traitées sans aucun LLM. Les avis `/bon` et `/mauvais` la corrigent : une compétence qui se trompe deux fois est abandonnée, puis réapprise autrement à la demande suivante.
 
 ## Organisation
@@ -47,6 +67,7 @@ La mémoire est dans `~/.janova/` (ou dans le dossier `JANOVA_HOME`). Les régla
 |---|---|
 | `janova/core.py` | Le noyau : la boucle de vie (percevoir, chercher en soi, apprendre, répondre) |
 | `janova/store.py` | La mémoire (compétences, connaissances, épisodes) et le journal chaîné |
+| `janova/cerveau.py` | Le cerveau : notes Markdown reliées (compatibles Obsidian) et vue graphe |
 | `janova/sandbox.py` | L'exécution isolée des compétences apprises |
 | `janova/teachers.py` | L'entourage : les professeurs LLM et le consensus |
 | `janova/meaning.py` | La comparaison par le sens (petit modèle d'embeddings, vecteurs gardés en cache) |
