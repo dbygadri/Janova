@@ -39,7 +39,18 @@ La mémoire est dans `~/.janova/` (ou dans le dossier `JANOVA_HOME`). Les régla
    - *connaissance* : elle pose la question à **tous** les professeurs et ne mémorise la réponse que si la majorité est d'accord ;
    - *conversation* : elle répond, sans rien mémoriser comme vérité.
 
-`/etat` affiche son **taux d'autonomie**, c'est-à-dire la part des demandes traitées sans aucun LLM. Les avis `/bon` et `/mauvais` la corrigent : une compétence qui se trompe deux fois est abandonnée, puis réapprise autrement à la demande suivante.
+`/etat` affiche son **taux d'autonomie**, c'est-à-dire la part des demandes traitées sans aucun LLM. Les avis `/bon` et `/mauvais` la corrigent : une compétence qui se trompe deux fois est abandonnée, puis réapprise autrement à la demande suivante. `/pourquoi` montre comment elle a traité la dernière demande : classement, essais d'apprentissage et erreurs du code proposé.
+
+## Banc d'essai : mesurer sa croissance
+
+```bash
+python -m bench              # 26 tâches × 2 passages, compter 15 à 60 min selon la machine
+python -m bench --limite 2   # essai rapide : 2 tâches par catégorie
+```
+
+Chaque tâche passe deux fois. La première fois, JANOVA doit l'apprendre auprès de ses professeurs. La seconde fois, la même tâche revient avec d'autres valeurs ou une autre formulation : elle devrait alors répondre **seule, sans LLM, et juste**.
+
+Le banc utilise une mémoire temporaire, donc ta vraie mémoire n'est pas touchée. Les professeurs et le modèle de sens viennent de ton `config.json`. Il écrit un rapport `rapport-banc-AAAAMMJJ-HHMM.md` (avec un `.json`) : taux d'autonomie, justesse des réponses, temps, et le détail de chaque échec. Les demandes sont dans `bench/demandes.json`. Relance le banc après chaque amélioration pour vérifier qu'elle progresse vraiment.
 
 ## Organisation
 
@@ -53,12 +64,15 @@ La mémoire est dans `~/.janova/` (ou dans le dossier `JANOVA_HOME`). Les régla
 | `janova/text.py` | La comparaison par les mots, sans modèle |
 | `janova/config.py` | Les réglages |
 | `janova/__main__.py` | L'interface texte |
+| `bench/` | Le banc d'essai et ses demandes |
 
 ## Tests
 
 ```bash
 python -m unittest discover -s tests
 ```
+
+GitHub les relance à chaque PR et à chaque push sur `main`, sous Linux et sous Windows, avec Python 3.10 et 3.13 (`.github/workflows/tests.yml`).
 
 ## Limites connues
 

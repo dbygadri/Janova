@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from janova import __version__
 from janova.config import load_config
@@ -14,6 +15,8 @@ def main() -> None:
     parser.add_argument("message", nargs="*", help="une demande unique (sinon mode conversation)")
     parser.add_argument("--home", help="dossier de JANOVA (par défaut JANOVA_HOME ou ~/.janova)")
     args = parser.parse_args()
+    # Une console Windows redirigée ne sait pas toujours afficher les emojis : on remplace au lieu de planter.
+    sys.stdout.reconfigure(errors="replace")
 
     config = load_config(args.home)
     janova = Janova(config)

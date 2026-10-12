@@ -100,7 +100,7 @@ def run_skill(code: str, inputs: list[str], timeout: float) -> list[RunResult]:
     with tempfile.TemporaryDirectory(prefix="janova-") as workdir:
         try:
             proc = subprocess.run(
-                [sys.executable, "-I", "-c", _RUNNER],
+                [sys.executable, "-I", "-X", "utf8", "-c", _RUNNER],
                 input=json.dumps({"code": code, "inputs": inputs}),
                 capture_output=True,
                 text=True,

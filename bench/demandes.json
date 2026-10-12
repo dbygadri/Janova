@@ -1,0 +1,30 @@
+[
+  {"categorie": "competence", "apprentissage": "Convertis 20 degrés Celsius en Fahrenheit", "variante": "Quelle température en Fahrenheit pour 35 °C ?", "contient": ["95"]},
+  {"categorie": "competence", "apprentissage": "Convertis 10 kilomètres en miles", "variante": "Combien de miles font 42 km ?", "contient": ["26.1", "26.09", "26.0976"]},
+  {"categorie": "competence", "apprentissage": "Combien font 15 % de 80 ?", "variante": "Calcule 20 % de 350", "contient": ["70"]},
+  {"categorie": "competence", "apprentissage": "Quelle est la racine carrée de 144 ?", "variante": "Racine carrée de 625", "contient": ["25"]},
+  {"categorie": "competence", "apprentissage": "Combien de jours entre le 1er janvier 2024 et le 1er mars 2024 ?", "variante": "Nombre de jours entre le 10 mars 2025 et le 20 avril 2025", "contient": ["41"]},
+  {"categorie": "competence", "apprentissage": "Quel jour de la semaine était le 14 juillet 1789 ?", "variante": "Quel jour de la semaine tombe le 25 décembre 2030 ?", "contient": ["mercredi"]},
+  {"categorie": "competence", "apprentissage": "Mets cette phrase en majuscules : bonjour janova", "variante": "Écris en majuscules : le robot apprend vite", "contient": ["LE ROBOT APPREND VITE"]},
+  {"categorie": "competence", "apprentissage": "Compte les mots de cette phrase : le chat dort sur le canapé", "variante": "Combien de mots dans : janova apprend chaque jour un peu plus", "contient": ["7"]},
+  {"categorie": "competence", "apprentissage": "Écris le mot ordinateur à l'envers", "variante": "Écris le mot téléphone à l'envers", "contient": ["enohpelet"]},
+  {"categorie": "competence", "apprentissage": "Est-ce que 17 est un nombre premier ?", "variante": "Est-ce que 91 est un nombre premier ?", "contient": ["non", "n'est pas", "false"]},
+  {"categorie": "competence", "apprentissage": "Convertis 3 heures et 15 minutes en minutes", "variante": "Combien de minutes dans 2 heures et 40 minutes ?", "contient": ["160"]},
+  {"categorie": "competence", "apprentissage": "Calcule la moyenne de 12, 15 et 18", "variante": "Calcule la moyenne de 4, 8, 15, 16 et 23", "contient": ["13.2"]},
+  {"categorie": "competence", "apprentissage": "Calcule l'IMC pour 70 kg et 1,75 m", "variante": "Quel est l'IMC d'une personne de 90 kg mesurant 1,80 m ?", "contient": ["27.8", "27.7"]},
+  {"categorie": "competence", "apprentissage": "Écris 255 en binaire", "variante": "Convertis 1024 en binaire", "contient": ["10000000000"]},
+  {"categorie": "competence", "apprentissage": "Quelle est l'aire d'un cercle de rayon 3 ?", "variante": "Quelle est l'aire d'un disque de rayon 10 ?", "contient": ["314"]},
+  {"categorie": "competence", "apprentissage": "Quel âge a en 2026 une personne née en 1990 ?", "variante": "Si je suis né en 2001, quel âge aurai-je en 2040 ?", "contient": ["39"]},
+
+  {"categorie": "connaissance", "apprentissage": "Quelle est la capitale de l'Australie ?", "variante": "C'est quoi la capitale de l'Australie ?", "contient": ["canberra"]},
+  {"categorie": "connaissance", "apprentissage": "Combien y a-t-il de planètes dans le système solaire ?", "variante": "Combien de planètes tournent autour du Soleil ?", "contient": ["8", "huit"]},
+  {"categorie": "connaissance", "apprentissage": "Qui a écrit Les Misérables ?", "variante": "L'auteur des Misérables, c'est qui ?", "contient": ["hugo"]},
+  {"categorie": "connaissance", "apprentissage": "Quel est le symbole chimique de l'or ?", "variante": "Symbole chimique de l'or ?", "contient": ["au"]},
+  {"categorie": "connaissance", "apprentissage": "En quelle année a eu lieu la prise de la Bastille ?", "variante": "La Bastille a été prise en quelle année ?", "contient": ["1789"]},
+  {"categorie": "connaissance", "apprentissage": "Quelle est la capitale de la Guinée ?", "variante": "Capitale de la Guinée ?", "contient": ["conakry"]},
+
+  {"categorie": "conversation", "apprentissage": "Bonjour, comment vas-tu ?", "variante": "Salut JANOVA, ça va ?"},
+  {"categorie": "conversation", "apprentissage": "Raconte-moi une courte blague", "variante": "Dis-moi une autre blague"},
+  {"categorie": "conversation", "apprentissage": "Donne-moi un conseil pour bien dormir", "variante": "Un conseil pour mieux me concentrer ?"},
+  {"categorie": "conversation", "apprentissage": "Quel temps fait-il aujourd'hui ?", "variante": "Quelles sont les nouvelles du jour ?"}
+]

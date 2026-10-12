@@ -93,6 +93,10 @@ class SandboxTest(unittest.TestCase):
         self.assertFalse(results[0].ok)
         self.assertIn("Temps", results[0].output)
 
+    def test_non_ascii_text_survives(self):
+        results = run_skill("def run(d):\n    return d.upper() + ' °F'", ["éléphant à Conakry"], timeout=10)
+        self.assertEqual(results[0].output, "ÉLÉPHANT À CONAKRY °F")
+
     def test_print_does_not_break_output(self):
         results = run_skill("def run(d):\n    print('bruit')\n    return 'ok'", ["x"], timeout=10)
         self.assertEqual(results[0].output, "ok")

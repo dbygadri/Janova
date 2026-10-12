@@ -66,6 +66,7 @@ HELP = """Commandes :
   /bon  /mauvais     ton avis sur la dernière réponse (elle en tient compte)
   /oublie c<id>      oublier une compétence (ex. /oublie c3) ; /oublie f<id> pour une connaissance
   /journal           les derniers apprentissages inscrits dans le journal chaîné
+  /pourquoi          comment JANOVA a traité la dernière demande
   /verifier          vérifier que rien n'a été modifié en douce
   /professeurs       l'entourage configuré"""
 
@@ -87,6 +88,7 @@ class Janova:
         self.store = store or Store(config.db_path)
         self.entourage = entourage or Entourage(build_teachers(config.teachers, config.teacher_timeout))
         self.meaning = Meaning(build_embedder(config.embedder) if embedder is _DEFAULT else embedder, self.store)
+        self.trace: list[str] = []  # ce qui s'est passé pendant la dernière demande (voir /pourquoi)
 
     def close(self) -> None:
         self.store.close()
@@ -98,6 +100,7 @@ class Janova:
         if message.startswith("/"):
             return Reply(self._command(message), "commande")
 
+        self.trace = []
         reply, ref = self._from_skill(message)
         if reply is None:
             reply, ref = self._from_memory(message)
@@ -135,8 +138,10 @@ class Janova:
             return None, None
         result = run_skill(skill.code, [message], self.config.sandbox_timeout)[0]
         if not result.ok or not result.output.strip():
+            self.trace.append(f"compétence « {skill.name} » reconnue mais en échec : {result.output}")
             self._penalize(skill, f"échec d'exécution : {result.output}")
             return None, None
+        self.trace.append(f"compétence « {skill.name} » reconnue et exécutée")
         self.store.skill_used(skill, message)
         return Reply(result.output, "competence"), skill.id
 
@@ -151,6 +156,7 @@ class Janova:
         fact = self._recognize(message, [(f, f.question) for f in self.store.facts()], self.config.fact_match_threshold)
         if fact is None:
             return None, None
+        self.trace.append(f"connaissance f{fact.id} reconnue")
         return Reply(fact.answer + self._confidence_note(fact.sources, fact.agreement), "memoire"), fact.id
 
     @staticmethod
@@ -176,18 +182,22 @@ class Janova:
                 return self._learn_fact(message)
             return self._converse(message), None
         except TeacherError as exc:
+            self.trace.append(f"professeur indisponible : {exc}")
             return Reply(f"Je ne sais pas encore faire ça et je n'ai pas pu demander : {exc}", "inconnu"), None
 
     def _classify(self, message: str) -> str:
         answer, _ = self.entourage.ask_first(CLASSIFY_PROMPT.format(request=message), TEACHER_SYSTEM)
         try:
-            return str(extract_json(answer).get("type", "conversation")).strip().lower()
+            kind = str(extract_json(answer).get("type", "conversation")).strip().lower()
         except TeacherError:
-            return "conversation"
+            kind = "conversation"
+            self.trace.append(f"classement illisible, traité comme conversation : {answer[:200]!r}")
+        self.trace.append(f"classée par le professeur : {kind}")
+        return kind
 
     def _learn_skill(self, message: str) -> tuple[Reply, int] | None:
         errors = ""
-        for _ in range(self.config.max_learning_attempts):
+        for attempt in range(1, self.config.max_learning_attempts + 1):
             answer, teacher = self.entourage.ask_first(
                 SKILL_PROMPT.format(imports=", ".join(sorted(ALLOWED_IMPORTS)), request=message, errors=errors),
                 TEACHER_SYSTEM,
@@ -198,9 +208,11 @@ class Janova:
                 tests = [(str(t["entree"]), str(t["attendu"])) for t in lesson.get("tests", [])]
             except (TeacherError, KeyError, TypeError) as exc:
                 errors = f"\n\nTa réponse précédente était inutilisable ({exc}). Recommence."
+                self.trace.append(f"essai {attempt} ({teacher}) : réponse inutilisable ({exc})")
                 continue
             if len(tests) < 3:
                 errors = "\n\nIl faut au moins 3 tests. Recommence."
+                self.trace.append(f"essai {attempt} ({teacher}) : seulement {len(tests)} test(s)")
                 continue
 
             results = run_skill(code, [t[0] for t in tests] + [message], self.config.sandbox_timeout)
@@ -215,6 +227,7 @@ class Janova:
                 failures.append(f"- run({message!r}) a échoué : {final.output}")
             if failures:
                 errors = "\n\nTon code précédent :\n" + code + "\nProblèmes :\n" + "\n".join(failures) + "\nCorrige."
+                self.trace.append(f"essai {attempt} ({teacher}) : {len(failures)} problème(s)\n" + "\n".join(failures))
                 continue
 
             skill = self.store.add_skill(
@@ -224,11 +237,14 @@ class Janova:
                 examples=[message] + [t[0] for t in tests],
                 teacher=teacher,
             )
+            self.trace.append(f"essai {attempt} ({teacher}) : compétence « {skill.name} » acceptée")
             return Reply(f"{final.output}\n(nouvelle compétence apprise : {skill.name})", "apprend-competence"), skill.id
+        self.trace.append("apprentissage abandonné, réponse en simple conversation")
         return None
 
     def _learn_fact(self, message: str) -> tuple[Reply, int | None]:
         result = self.entourage.consensus(FACT_PROMPT.format(request=message), TEACHER_SYSTEM)
+        self.trace.append(f"consensus : {result.agreement:.0%} d'accord sur {result.sources} professeur(s)")
         if result.agreement < 0.5:
             note = "\n(mes professeurs ne sont pas d'accord ou ne savent pas : je ne le mémorise pas)"
             return Reply(result.answer + note, "professeur"), None
@@ -277,6 +293,8 @@ class Janova:
             if not rows:
                 return "Journal vide."
             return "\n".join(f"#{r['id']} {r['at']} {r['kind']} {r['payload']}  [{r['hash'][:12]}]" for r in rows)
+        if name == "pourquoi":
+            return "\n".join(self.trace) or "Rien à expliquer : réponse directe ou aucune demande encore."
         if name == "verifier":
             problems = self.store.verify()
             return "Intégrité vérifiée : rien n'a été modifié." if not problems else "\n".join(problems)
