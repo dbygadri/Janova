@@ -58,13 +58,22 @@ def _clean(text: str) -> str:
     return " ".join(normalize(text).replace(",", ".").split())
 
 
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+
+
 def is_correct(answer: str, expected: list[str]) -> bool:
     answer = _clean(answer)
     for item in map(_clean, expected):
-        if item.isalpha() and len(item) <= 3:
-            if re.search(rf"\b{re.escape(item)}\b", answer):
-                return True
-        elif item in answer:
+        if _NUMBER.fullmatch(item):
+            # Un nombre entier, pas un morceau d'un autre : « 25 » ne valide ni « 250 » ni « 1.25 ».
+            # Les zéros en plus sont admis : « 95.0 » vaut « 95 », « 26.10 » vaut « 26.1 ».
+            tail = r"0*" if "." in item else r"(?:\.0+)?"
+            pattern = rf"(?<![\d.]){re.escape(item)}{tail}(?!\d)(?!\.\d)"
+        elif item.isalpha() and len(item) <= 3:
+            pattern = rf"\b{re.escape(item)}\b"
+        else:
+            pattern = re.escape(item)
+        if re.search(pattern, answer):
             return True
     return False
 
@@ -80,6 +89,7 @@ def run_request(janova: Janova, teachers: list[CountingTeacher], item: dict, pha
         "phase": phase,
         "demande": message,
         "route": reply.route,
+        "classement": janova.last_kind,
         "reponse": reply.text,
         "secondes": round(seconds, 2),
         "appels_professeurs": sum(t.calls for t in teachers) - calls_before,
@@ -101,7 +111,9 @@ def summarize(results: list[dict]) -> dict:
     alone = [r for r in results if r["route"] in AUTONOMOUS_ROUTES]
     helped = [r for r in results if r["appels_professeurs"]]
     return {
-        "classement_correct": (sum(r["route"] == EXPECTED_ROUTE[r["categorie"]] for r in learn), len(learn)),
+        # Le classement est jugé sur le choix du professeur, pas sur le résultat final : un apprentissage
+        # raté après un bon classement est un échec d'apprentissage, pas une erreur de classement.
+        "classement_correct": (sum(r["classement"] == r["categorie"] for r in learn), len(learn)),
         "competences_apprises": (
             sum(r["route"] == "apprend-competence" for r in learn if r["categorie"] == "competence"),
             sum(r["categorie"] == "competence" for r in learn),
@@ -170,7 +182,7 @@ def markdown(info: dict, summary: dict, results: list[dict]) -> str:
             lines += [
                 f"### {r['phase']} — {r['demande']}",
                 "",
-                f"Attendu : {r['categorie']} · obtenu : {r['route']}",
+                f"Attendu : {r['categorie']} · classée : {r['classement'] or '—'} · obtenu : {r['route']}",
                 "",
                 "Réponse :",
                 "```",
@@ -246,7 +258,11 @@ def main() -> None:
     summary = summarize(results)
     out = Path(args.sortie)
     out.mkdir(parents=True, exist_ok=True)
-    stem = f"rapport-banc-{datetime.now():%Y%m%d-%H%M}"
+    stem = f"rapport-banc-{datetime.now():%Y%m%d-%H%M%S}"
+    suffix = 1
+    while (out / f"{stem}.md").exists() or (out / f"{stem}.json").exists():
+        suffix += 1
+        stem = f"rapport-banc-{datetime.now():%Y%m%d-%H%M%S}-{suffix}"
     (out / f"{stem}.md").write_text(markdown(info, summary, results), encoding="utf-8")
     (out / f"{stem}.json").write_text(
         json.dumps({"info": info, "resume": summary, "resultats": results}, ensure_ascii=False, indent=2),

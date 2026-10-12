@@ -89,6 +89,7 @@ class Janova:
         self.entourage = entourage or Entourage(build_teachers(config.teachers, config.teacher_timeout))
         self.meaning = Meaning(build_embedder(config.embedder) if embedder is _DEFAULT else embedder, self.store)
         self.trace: list[str] = []  # ce qui s'est passé pendant la dernière demande (voir /pourquoi)
+        self.last_kind: str | None = None  # catégorie choisie par le professeur pour la dernière demande
 
     def close(self) -> None:
         self.store.close()
@@ -101,6 +102,7 @@ class Janova:
             return Reply(self._command(message), "commande")
 
         self.trace = []
+        self.last_kind = None
         reply, ref = self._from_skill(message)
         if reply is None:
             reply, ref = self._from_memory(message)
@@ -193,6 +195,7 @@ class Janova:
             kind = "conversation"
             self.trace.append(f"classement illisible, traité comme conversation : {answer[:200]!r}")
         self.trace.append(f"classée par le professeur : {kind}")
+        self.last_kind = kind
         return kind
 
     def _learn_skill(self, message: str) -> tuple[Reply, int] | None:
