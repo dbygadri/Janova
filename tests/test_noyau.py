@@ -7,6 +7,7 @@ from pathlib import Path
 
 from janova.config import load_config
 from janova.core import Janova
+from janova.meaning import EmbedderError
 from janova.sandbox import check_code, run_skill
 from janova.store import Store
 from janova.teachers import Entourage, TeacherError, extract_json
@@ -69,8 +70,8 @@ class BaseCase(unittest.TestCase):
             janova.close()
         self.tmp.cleanup()
 
-    def make(self, *teachers):
-        janova = Janova(self.config, entourage=Entourage(list(teachers)))
+    def make(self, *teachers, embedder=None):
+        janova = Janova(self.config, entourage=Entourage(list(teachers)), embedder=embedder)
         self._janovas = getattr(self, "_janovas", []) + [janova]
         return janova
 
@@ -176,6 +177,73 @@ class LearningTest(BaseCase):
         self.make(FakeTeacher()).handle("convertis 20 celsius en fahrenheit")
         reborn = self.make()
         self.assertEqual(reborn.handle("convertis 50 celsius en fahrenheit").text, "122 °F")
+
+
+class FakeEmbedder:
+    """Modèle de sens simulé : une dimension par thème, plus une dimension commune."""
+
+    name = "faux-sens"
+    THEMES = [("celsius", "fahrenheit", "°c", "temperature", "température", "degres", "degrés"), ("capitale",)]
+
+    def __init__(self):
+        self.embedded = []
+
+    def embed(self, texts):
+        self.embedded += texts
+        return [[sum(w in t.lower() for w in theme) for theme in self.THEMES] + [0.3] for t in texts]
+
+
+class BrokenEmbedder:
+    name = "casse"
+
+    def __init__(self):
+        self.calls = 0
+
+    def embed(self, texts):
+        self.calls += 1
+        raise EmbedderError("injoignable")
+
+
+class MeaningTest(BaseCase):
+    QUESTION = "Quelle température en Fahrenheit pour 25 °C ?"
+
+    def test_words_alone_do_not_recognize_reformulation(self):
+        teacher = FakeTeacher()
+        janova = self.make(teacher)
+        janova.handle("convertis 20 celsius en fahrenheit")
+        self.assertNotEqual(janova.handle(self.QUESTION).route, "competence")
+
+    def test_meaning_recognizes_reformulation(self):
+        teacher, embedder = FakeTeacher(), FakeEmbedder()
+        janova = self.make(teacher, embedder=embedder)
+        janova.handle("convertis 20 celsius en fahrenheit")
+        calls = teacher.calls
+        reply = janova.handle(self.QUESTION)
+        self.assertEqual((reply.route, reply.text), ("competence", "77 °F"))
+        self.assertEqual(teacher.calls, calls)
+        self.assertIn("par le sens (faux-sens)", janova.handle("/etat").text)
+
+    def test_meaning_does_not_match_unrelated(self):
+        janova = self.make(FakeTeacher(kind="conversation"), embedder=FakeEmbedder())
+        janova.handle("convertis 20 celsius en fahrenheit")
+        self.assertEqual(janova.handle("bonjour, comment vas-tu ?").route, "professeur")
+
+    def test_vectors_are_cached(self):
+        embedder = FakeEmbedder()
+        janova = self.make(FakeTeacher(), embedder=embedder)
+        janova.handle("convertis 20 celsius en fahrenheit")
+        janova.handle(self.QUESTION)
+        before = len(embedder.embedded)
+        janova.handle(self.QUESTION)
+        self.assertEqual(len(embedder.embedded), before)
+
+    def test_falls_back_to_words_when_model_is_down(self):
+        embedder = BrokenEmbedder()
+        janova = self.make(FakeTeacher(), embedder=embedder)
+        janova.handle("convertis 20 celsius en fahrenheit")
+        self.assertEqual(janova.handle("convertis 30 celsius en fahrenheit").route, "competence")
+        self.assertEqual(embedder.calls, 1)
+        self.assertIn("par les mots seulement (injoignable)", janova.handle("/etat").text)
 
 
 class JsonTest(unittest.TestCase):
