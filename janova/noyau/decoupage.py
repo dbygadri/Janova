@@ -34,7 +34,9 @@ MOTS_DE_LIAISON = [
 
 # Les signes de ponctuation qui terminent une étape :
 # le point, le point-virgule, le point d'exclamation, le point d'interrogation, le retour à la ligne.
-PONCTUATION_DE_FIN = r"[.;!?\n]"
+# Exception : un point placé entre deux chiffres (2.5) est une virgule décimale, pas une fin d'étape.
+# (?<!\d) veut dire « pas précédé d'un chiffre », (?!\d) « pas suivi d'un chiffre ».
+PONCTUATION_DE_FIN = r"(?<!\d)\.|\.(?!\d)|[;!?\n]"
 
 # On fabrique une seule expression régulière qui reconnaît n'importe quel séparateur :
 # - soit une ponctuation de fin,

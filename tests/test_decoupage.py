@@ -33,5 +33,9 @@ class TestDecoupage(unittest.TestCase):
                          ["Lis les messages reçus depuis hier"])
 
 
+    def test_nombre_a_virgule_non_coupe(self):
+        self.assertEqual(decouper_en_etapes("Calcule 2.5 + 1. Puis dis merci."), ["Calcule 2.5 + 1", "dis merci"])
+
+
 if __name__ == "__main__":
     unittest.main()

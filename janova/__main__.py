@@ -1,19 +1,43 @@
-"""Petite démonstration, lancée avec : python -m janova
+"""Démonstration de Janova, lancée avec : python -m janova
 
-On demande une tâche à l'utilisateur, et le noyau la découpe en étapes.
+On tape une tâche, Janova la découpe en étapes, confie chaque étape à la partie la plus économe
+capable de la traiter, et affiche ce que ça a coûté.
 """
 
-from janova.noyau import decouper_en_etapes
+from janova.noyau import Janova
 
-# input() affiche la question et attend que l'utilisateur tape une phrase puis Entrée.
-tache = input("Quelle tâche dois-je découper ? ")
+AIDE = """Tape une tâche, par exemple :
+  calcule 12 * (3 + 4), puis mets en majuscules : bonjour
+Commandes :
+  /bilan     toutes les ressources dépensées (électricité, mémoire, carte graphique, stockage)
+  /reflexes  nombre de réflexes appris
+  /dormir    sommeil : endort les organes et trie les réflexes
+  /aide      cette aide
+  /quitter   fermer Janova"""
 
-etapes = decouper_en_etapes(tache)
+janova = Janova()
+print("Janova est prête.", AIDE, sep="\n")
 
-if not etapes:
-    print("Je n'ai reçu aucune tâche.")
-else:
-    print("Voici les étapes :")
-    # enumerate() numérote les étapes ; start=1 pour commencer à 1 au lieu de 0.
-    for numero, etape in enumerate(etapes, start=1):
-        print(f"  {numero}. {etape}")
+while True:
+    # input() attend que l'utilisateur tape une phrase puis Entrée.
+    # Ctrl+C ou Ctrl+D (fin de saisie) ferment Janova proprement au lieu d'afficher une erreur.
+    try:
+        saisie = input("\ntoi > ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        break
+
+    if saisie in ("/quitter", "/q"):
+        break
+    elif saisie == "/bilan":
+        print(janova.bilan())
+    elif saisie == "/reflexes":
+        print(f"{len(janova.reflexes)} réflexe(s) appris.")
+    elif saisie == "/dormir":
+        print(janova.dormir())
+    elif saisie == "/aide":
+        print(AIDE)
+    elif saisie:
+        print(janova.traiter(saisie).texte())
+
+print(janova.dormir())  # avant de partir, Janova range ce qu'elle a appris

@@ -9,3 +9,6 @@ __pycache__/
 .vscode/
 .idea/
 .DS_Store
+
+# Ce que Janova apprend sur ta machine (ses réflexes) : propre à chacun, on ne l envoie pas sur GitHub.
+donnees/
