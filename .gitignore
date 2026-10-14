@@ -1,0 +1,11 @@
+# Environnement virtuel : chacun recrée le sien, on ne l'envoie pas sur GitHub.
+.venv/
+
+# Fichiers temporaires créés automatiquement par Python.
+__pycache__/
+*.pyc
+
+# Fichiers propres à certains éditeurs ou systèmes.
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,2 @@
+# Bibliothèques dont Janova a besoin (une par ligne).
+# Aucune pour l'instant : le projet n'utilise que ce qui est fourni avec Python.
