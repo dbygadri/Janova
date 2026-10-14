@@ -25,7 +25,7 @@ class OrganeGraphique(Organe):
 class TestNoyau(unittest.TestCase):
     def setUp(self):
         self.dossier = tempfile.TemporaryDirectory()
-        self.janova = Janova(dossier_donnees=self.dossier.name)
+        self.janova = Janova(dossier_donnees=self.dossier.name, aide=None)
 
     def tearDown(self):
         self.dossier.cleanup()
@@ -44,7 +44,7 @@ class TestNoyau(unittest.TestCase):
 
     def test_les_reflexes_survivent_a_un_redemarrage(self):
         self.janova.traiter("calcule 6 * 7")
-        redemarree = Janova(dossier_donnees=self.dossier.name)
+        redemarree = Janova(dossier_donnees=self.dossier.name, aide=None)
         self.assertEqual(redemarree.traiter("calcule 6 * 7").etapes[0].niveau, "réflexe")
 
     def test_les_organes_dorment_tant_qu_on_n_en_a_pas_besoin(self):
@@ -55,7 +55,7 @@ class TestNoyau(unittest.TestCase):
         self.assertEqual(self.janova.organes_eveilles, {})
 
     def test_la_carte_graphique_passe_en_dernier(self):
-        janova = Janova(dossier_donnees=self.dossier.name, organes=[OrganeGraphique, OrganeCalcul])
+        janova = Janova(dossier_donnees=self.dossier.name, organes=[OrganeGraphique, OrganeCalcul], aide=None)
         self.assertEqual(janova.traiter("calcule 1 + 1").etapes[0].niveau, "organe calcul")
         self.assertEqual(janova.traiter("dis bonjour").etapes[0].niveau, "organe graphique")
         self.assertIn("Carte graphique : utilisée par graphique", janova.bilan())

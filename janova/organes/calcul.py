@@ -4,6 +4,8 @@ Exemples d'étapes reconnues :
     « calcule 12 * (3 + 4) »      → 84
     « combien font 7 fois 6 ? »   → 42
     « 2,5 plus 1,5 »              → 4
+    « multiplie 5 par 4 »         → 20
+    « ajoute 10 à 32 »            → 42
 
 Sécurité : on n'utilise surtout PAS eval(), qui exécuterait n'importe quel code Python
 caché dans le texte. On analyse l'opération avec le module « ast », et on n'accepte que
@@ -48,9 +50,23 @@ OPERATEURS = {
 }
 
 
+# Les tournures où l'opération entoure les nombres : « multiplie 5 par 4 » → « 5 * 4 ».
+# (.+?) attrape le premier nombre, (.+) le second ; \1 et \2 les remettent à leur place.
+TOURNURES = [
+    (re.compile(r"multipli\w*\s+(.+?)\s+par\s+(.+)"), r"\1 * \2"),
+    (re.compile(r"divis\w*\s+(.+?)\s+par\s+(.+)"), r"\1 / \2"),
+    (re.compile(r"ajout\w*\s+(.+?)\s+(?:à|a|au|aux)\s+(.+)"), r"\2 + \1"),
+    (re.compile(r"soustra\w*\s+(.+?)\s+(?:de|du|à|a)\s+(.+)"), r"\2 - \1"),
+    (re.compile(r"(?:élève|eleve)\w*\s+(.+?)\s+(?:à la puissance|puissance)\s+(.+)"), r"\1 ** \2"),
+]
+
+
 def _preparer(etape: str) -> str:
     """Transforme les mots en symboles et les virgules décimales en points : « 2,5 fois 2 » → « 2.5 * 2 »."""
-    texte = etape.lower()
+    # Les guillemets (ajoutés par le raisonnement du noyau autour d'un résultat) ne servent pas au calcul.
+    texte = etape.lower().replace("«", " ").replace("»", " ")
+    for tournure, remplacement in TOURNURES:
+        texte = tournure.sub(remplacement, texte)
     for mot, symbole in MOTS_OPERATIONS:
         texte = texte.replace(mot, f" {symbole} ")
     # Une virgule entre deux chiffres est une virgule décimale : 2,5 → 2.5

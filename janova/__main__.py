@@ -8,9 +8,11 @@ from janova.noyau import Janova
 
 AIDE = """Tape une tâche, par exemple :
   calcule 12 * (3 + 4), puis mets en majuscules : bonjour
+  calcule 2 + 3, puis multiplie le résultat par 4
 Commandes :
   /bilan     toutes les ressources dépensées (électricité, mémoire, carte graphique, stockage)
   /reflexes  nombre de réflexes appris
+  /organes   la liste des organes (de base et appris) et l'état de l'aide extérieure
   /dormir    sommeil : endort les organes et trie les réflexes
   /aide      cette aide
   /quitter   fermer Janova"""
@@ -33,10 +35,14 @@ while True:
         print(janova.bilan())
     elif saisie == "/reflexes":
         print(f"{len(janova.reflexes)} réflexe(s) appris.")
+    elif saisie == "/organes":
+        print(janova.organes())
     elif saisie == "/dormir":
         print(janova.dormir())
     elif saisie == "/aide":
         print(AIDE)
+    elif saisie.startswith("/"):
+        print(f"Commande inconnue : {saisie}. Tape /aide pour la liste.")
     elif saisie:
         print(janova.traiter(saisie).texte())
 

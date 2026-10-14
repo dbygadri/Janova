@@ -53,9 +53,9 @@ Face à une situation qu'aucun organe ne sait traiter, Janova peut **se donner u
 | Réflexes appris (règle 3) | ✅ Chaque réussite d'un organe devient un réflexe, gardé sur le disque |
 | Sommeil (règle 4) | ✅ `/dormir` endort les organes et oublie les réflexes inutiles |
 | Compteur d'énergie (règle 5) | ✅ Électricité, mémoire, carte graphique, stockage |
-| Raisonnement du noyau (combiner des organes) | ⏳ À venir |
-| Aide extérieure (grand modèle d'IA, en dernier recours) | ⏳ À venir |
-| Auto-extension | ⏳ À venir |
+| Raisonnement du noyau (niveau 3) | ✅ Relie une étape au résultat précédent (« multiplie le résultat par 4 ») |
+| Aide extérieure (niveau 4) | ✅ Un modèle d'IA **local** via Ollama, en tout dernier recours |
+| Auto-extension | ✅ L'IA écrit un nouvel organe, testé dans un bac à sable, gardé pour la suite |
 
 ## Organisation des fichiers
 
@@ -66,14 +66,18 @@ Janova/
 │   ├── energie.py       le compteur d'énergie : électricité, mémoire, carte graphique, stockage
 │   ├── noyau/           le cerveau : reçoit une tâche, la découpe, coordonne
 │   │   ├── decoupage.py    découpage d'une tâche en étapes
-│   │   └── coordination.py le moins cher d'abord, réveil des organes, sommeil
+│   │   ├── coordination.py les 4 niveaux, du moins cher au plus cher ; réveil des organes ; sommeil
+│   │   └── raisonnement.py relie une étape au résultat de la précédente
 │   ├── organes/         les organes spécialisés
 │   │   ├── base.py         le modèle commun : nom, coût, carte graphique, réflexe possible
 │   │   ├── calcul.py       résout les opérations (sans eval, donc sans danger)
 │   │   └── texte.py        majuscules, minuscules, compter les mots, à l'envers
+│   ├── aide_exterieure.py le modèle d'IA local (Ollama), en dernier recours
 │   ├── reflexes/        les réflexes appris
 │   │   └── memoire.py      apprendre, retrouver, garder sur le disque, oublier en dormant
-│   └── extension/       l'auto-extension (à venir)
+│   └── extension/       l'auto-extension
+│       ├── createur.py     fait écrire un organe par l'IA, le teste, l'enregistre
+│       └── bac_a_sable.py  vérifie et exécute sans danger le code écrit par l'IA
 ├── donnees/             ce que Janova apprend sur ta machine (créé tout seul, pas envoyé sur GitHub)
 ├── tests/               les tests automatiques
 ├── requirements.txt     les bibliothèques nécessaires (aucune pour l'instant)
@@ -102,6 +106,23 @@ python -m unittest
 
 Sur Linux ou macOS, l'étape 3 s'écrit `source .venv/bin/activate`.
 
+## L'aide extérieure et l'auto-extension (facultatif)
+
+Sans IA, Janova fonctionne déjà avec ses réflexes, ses organes et son raisonnement. Pour qu'elle puisse **apprendre de nouveaux organes**, installe [Ollama](https://ollama.com) (gratuit, tout reste sur ta machine), puis un petit modèle économe :
+
+```bash
+ollama pull qwen2.5:1.5b
+```
+
+Quand aucune autre partie ne sait traiter une étape, Janova demande au modèle d'écrire un **organe** pour ce genre d'étape. Si ce n'est pas possible, le modèle répond directement. L'organe proposé n'est gardé que s'il :
+1. passe la **lecture de sécurité** : pas de fichiers, pas de réseau, pas de code caché ;
+2. réussit **ses propres tests**, exécutés dans un **bac à sable** (programme séparé, limites de temps et de mémoire) ;
+3. traite bien l'étape d'origine.
+
+Il est ensuite enregistré dans `donnees/organes_appris/` : **la fois suivante, plus besoin de l'IA**. Pour utiliser un autre modèle : variable d'environnement `JANOVA_MODELE`. Si Ollama n'est pas lancé, Janova continue sans lui.
+
+> ⚠️ Le compteur d'énergie ne mesure que Janova. Ollama et le bac à sable tournent à part : leur consommation réelle, surtout celle d'Ollama, est plus élevée que ce qui s'affiche.
+
 ## Exemple
 
 ```
@@ -118,4 +139,16 @@ toi > calcule 12 * (3 + 4)
 
 La deuxième fois, c'est un **réflexe** : environ 34 fois moins de calcul et 80 fois moins de mémoire. Les chiffres varient selon la machine.
 
-Commandes : `/bilan` (toutes les ressources dépensées), `/reflexes`, `/dormir`, `/aide`, `/quitter`.
+Avec le raisonnement, l'aide extérieure et l'auto-extension (ici, Ollama est lancé) :
+
+```
+toi > calcule 2 + 3, puis multiplie le résultat par 4. Ensuite convertis 20 celsius en fahrenheit
+  1. calcule 2 + 3 → 2 + 3 = 5   [organe calcul, …]
+  2. multiplie le résultat par 4 → 5 * 4 = 20   [raisonnement + organe calcul, …]
+  3. convertis 20 celsius en fahrenheit → 68 °F   [aide extérieure → nouvel organe « celsius_fahrenheit », …]
+
+toi > convertis 37 celsius en fahrenheit
+  1. convertis 37 celsius en fahrenheit → 98.6 °F   [organe celsius_fahrenheit, …]
+```
+
+Commandes : `/bilan` (toutes les ressources dépensées), `/organes`, `/reflexes`, `/dormir`, `/aide`, `/quitter`.

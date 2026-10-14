@@ -7,6 +7,10 @@ Pour Janova, « l'énergie », ce sont **toutes les ressources de la machine** :
 - la **mémoire vive (RAM)** : on mesure le **pic** de mémoire utilisé par chaque action. Unité : le kilo-octet (Ko) ;
 - la **carte graphique** : on compte les organes qui en ont besoin. L'objectif de Janova est de s'en passer ;
 - le **stockage** : la place occupée sur le disque par ce que Janova a appris (calculée par le noyau).
+
+Limite à connaître : le compteur ne voit que Janova elle-même. L'aide extérieure (Ollama) et le bac à sable
+des organes appris tournent dans des programmes séparés : leur électricité et leur mémoire ne sont pas comptées.
+Leur vrai coût est donc plus élevé que ce qui s'affiche, surtout pour l'aide extérieure.
 """
 
 # Ces trois modules sont fournis avec Python, il n'y a rien à installer :
@@ -71,8 +75,13 @@ class CompteurEnergie:
         lignes.append(f"🧠 Mémoire vive : pic de {pic:.1f} Ko")
         if self.organes_gpu:
             lignes.append(f"🎮 Carte graphique : utilisée par {', '.join(sorted(self.organes_gpu))}")
+        if "aide extérieure" in self.temps_par_niveau:
+            lignes.append(
+                "⚠️ L'aide extérieure tourne dans un programme séparé (Ollama) : sa propre électricité et sa"
+                " mémoire (souvent plus d'1 Go) ne sont pas comptées ici. Son vrai coût est bien plus élevé."
+            )
         else:
             lignes.append("🎮 Carte graphique : non utilisée")
-        lignes.append(f"💾 Stockage : {stockage_ko:.1f} Ko de réflexes sur le disque")
+        lignes.append(f"💾 Stockage : {stockage_ko:.1f} Ko d'apprentissages sur le disque (réflexes, organes appris)")
         lignes.append(f"♻️ Économisé grâce aux réflexes : {self.temps_economise:.0f} µs de calcul")
         return "\n".join(lignes)
