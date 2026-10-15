@@ -12,6 +12,9 @@ S'il échoue, on renvoie les erreurs à l'IA pour qu'elle corrige (2 essais de p
 
 Les organes acceptés sont enregistrés dans donnees/organes_appris/ (un fichier JSON par organe),
 et rechargés à chaque démarrage : Janova garde ce qu'elle a appris.
+
+Ensuite, ils évoluent : chaque fausse alerte (organe réveillé pour une étape qui n'était pas pour lui)
+est notée, et pendant le sommeil leurs mots-clés évoluent pour les éviter (voir evolution.py).
 """
 
 import json
@@ -21,6 +24,7 @@ from pathlib import Path
 
 from janova.aide_exterieure import AideExterieure
 from janova.extension.bac_a_sable import MODULES_AUTORISES, executer, verifier_code
+from janova.extension.evolution import evoluer
 from janova.organes.base import Organe
 
 ESSAIS_MAX = 3
@@ -62,7 +66,6 @@ def _extraire_json(texte: str) -> dict | None:
 
 def fabriquer_organe(fiche: dict, delai_secondes: float = 5.0) -> type[Organe]:
     """Transforme la fiche d'un organe appris (nom, mots-clés, code…) en un vrai organe utilisable par le noyau."""
-    mots_cles = [_sans_accents(mot) for mot in fiche["mots_cles"]]
 
     class OrganeAppris(Organe):
         nom = fiche["nom"]
@@ -71,18 +74,21 @@ def fabriquer_organe(fiche: dict, delai_secondes: float = 5.0) -> type[Organe]:
         besoin_gpu = False
         deterministe = True
         code = fiche["code"]
+        mots_cles = [_sans_accents(mot) for mot in fiche["mots_cles"]]  # ils peuvent évoluer pendant le sommeil
 
         @classmethod
         def reconnait(cls, etape: str) -> bool:
             # Le coup d'œil : une simple recherche de mots-clés, sans lancer le bac à sable (règle 2).
             texte = _sans_accents(etape)
-            return any(mot in texte for mot in mots_cles)
+            return any(mot in texte for mot in cls.mots_cles)
 
         def traiter(self, etape: str) -> str | None:
             # Le vrai travail : dans le bac à sable, l'organe vérifie lui-même l'étape puis la traite.
             ok, reponse = executer(self.code, [etape], delai_secondes)[0]
             return reponse if ok and reponse.strip() else None
 
+    # La fiche complète reste attachée à l'organe : elle sert à noter ses fausses alertes et à le faire évoluer.
+    OrganeAppris.fiche = fiche
     return OrganeAppris
 
 
@@ -189,6 +195,33 @@ class CreateurOrganes:
             fiche["nom"] = f"{nom}_{numero}"
             numero += 1
         fiche["tests"] = [{"etape": e, "attendu": a} for e, a in fiche["tests"]]
+        fiche["generation"] = 1  # augmente à chaque évolution
+        fiche["fausses_alertes"] = []
+        self._sauvegarder(fiche)
+        return fabriquer_organe(fiche, self.delai_secondes)
+
+    def _sauvegarder(self, fiche: dict) -> None:
         chemin = self.dossier / f"{fiche['nom']}.json"
         chemin.write_text(json.dumps(fiche, ensure_ascii=False, indent=2), encoding="utf-8")
-        return fabriquer_organe(fiche, self.delai_secondes)
+
+    # --- Évolution ----------------------------------------------------------------------------------
+
+    def noter_fausse_alerte(self, organe: type[Organe], etape: str) -> None:
+        """L'organe s'est réveillé pour une étape qui n'était pas pour lui : on le note (50 au maximum)."""
+        alertes = organe.fiche.setdefault("fausses_alertes", [])
+        if etape not in alertes:
+            alertes.append(etape)
+            del alertes[:-50]  # on ne garde que les 50 plus récentes
+            self._sauvegarder(organe.fiche)
+
+    def faire_evoluer(self, organe: type[Organe], etapes_reussies: list[str], graine: int) -> bool:
+        """Fait évoluer les mots-clés de l'organe. Renvoie True s'il a changé."""
+        positifs = [test["etape"] for test in organe.fiche["tests"]] + etapes_reussies
+        nouveaux = evoluer(organe.mots_cles, positifs, organe.fiche.get("fausses_alertes", []), graine)
+        if nouveaux is None:
+            return False
+        organe.mots_cles = nouveaux
+        organe.fiche["mots_cles"] = nouveaux
+        organe.fiche["generation"] = organe.fiche.get("generation", 1) + 1
+        self._sauvegarder(organe.fiche)
+        return True

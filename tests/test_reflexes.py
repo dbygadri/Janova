@@ -29,17 +29,25 @@ class TestMemoireReflexes(unittest.TestCase):
         memoire.sauvegarder()
         self.assertEqual(MemoireReflexes(self.chemin).chercher("calcule 2 + 2")["reponse"], "4")
 
-    def test_le_sommeil_oublie_seulement_les_vieux_reflexes_jamais_reutilises(self):
+    def test_la_force_diminue_avec_le_temps_et_la_repetition_la_renforce(self):
         memoire = MemoireReflexes(self.chemin)
-        il_y_a_un_an = (datetime.now() - timedelta(days=365)).isoformat(timespec="seconds")
-        for etape in ("vieux inutile", "vieux utile", "récent"):
-            memoire.apprendre(etape, "r", "calcul", 1.0)
-        memoire.reflexes["vieux inutile"]["derniere_utilisation"] = il_y_a_un_an
-        memoire.chercher("vieux utile")
-        memoire.reflexes["vieux utile"]["derniere_utilisation"] = il_y_a_un_an
+        memoire.apprendre("rare", "r", "calcul", 1.0)
+        memoire.apprendre("frequent", "r", "calcul", 1.0)
+        for _ in range(5):
+            memoire.chercher("frequent")
+        dans_une_semaine = datetime.now() + timedelta(days=7)
+        self.assertAlmostEqual(memoire.force(memoire.reflexes["rare"], dans_une_semaine), 0.5, places=2)
+        self.assertGreater(memoire.force(memoire.reflexes["frequent"], dans_une_semaine), 0.85)  # demi-vie de 42 jours : ≈ 89 %
 
-        self.assertEqual(memoire.consolider(oubli_apres_jours=30), 1)
-        self.assertEqual(sorted(memoire.reflexes), ["récent", "vieux utile"])
+    def test_le_sommeil_oublie_les_reflexes_trop_faibles(self):
+        memoire = MemoireReflexes(self.chemin)
+        memoire.apprendre("rare", "r", "calcul", 1.0)
+        memoire.apprendre("frequent", "r", "calcul", 1.0)
+        for _ in range(5):
+            memoire.chercher("frequent")
+        dans_un_mois = datetime.now() + timedelta(days=30)
+        self.assertEqual(memoire.consolider(dans_un_mois), 1)  # « rare » est oublié (force ≈ 5 %)
+        self.assertEqual(list(memoire.reflexes), ["frequent"])
 
     def test_fichier_abime_ne_fait_pas_planter(self):
         self.chemin.write_text("{ ceci n'est pas du JSON", encoding="utf-8")

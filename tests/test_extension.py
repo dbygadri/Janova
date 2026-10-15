@@ -96,7 +96,7 @@ class TestAutoExtension(BaseTest):
         aide = FausseAide()
         redemarree = self.janova(aide)
         self.assertEqual(redemarree.traiter("50 celsius en fahrenheit").etapes[0].reponse, "122 °F")
-        self.assertIn("celsius_fahrenheit (appris)", redemarree.organes())
+        self.assertIn("celsius_fahrenheit (appris, génération 1", redemarree.organes())
         self.assertEqual(aide.questions, [])
 
     def test_corrige_un_organe_refuse(self):
@@ -133,7 +133,7 @@ class TestAutoExtension(BaseTest):
         janova = self.janova(aide)
         self.assertEqual(janova.traiter("dis bonjour").etapes[0].niveau, "aucun")
         self.assertIn("injoignable", janova.organes())
-        self.assertEqual(janova.traiter("dis au revoir").etapes[0].niveau, "aucun")  # sans réessayer
+        self.assertEqual(janova.traiter("ouvre le fichier").etapes[0].niveau, "aucun")  # sans réessayer
 
 
 if __name__ == "__main__":

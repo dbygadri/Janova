@@ -5,11 +5,21 @@ revient, Janova répond tout de suite, sans réveiller aucun organe : c'est pres
 
 Les réflexes sont enregistrés dans un fichier JSON (un format texte simple, lisible par un humain),
 pour être conservés d'une utilisation à l'autre.
+
+Comme les souvenirs humains, un réflexe se renforce quand il sert et s'efface quand il ne sert plus
+(la « courbe de l'oubli » d'Ebbinghaus) :
+- sa **force** diminue avec le temps : elle perd la moitié de sa valeur à chaque « demi-vie » ;
+- la demi-vie vaut 7 jours au départ, et s'allonge de 7 jours à chaque réutilisation : un réflexe
+  souvent utilisé tient des mois, un réflexe jamais réutilisé disparaît en trois semaines environ ;
+- pendant le sommeil, les réflexes dont la force tombe sous 10 % sont oubliés.
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
+
+DEMI_VIE_JOURS = 7  # demi-vie d'un réflexe jamais réutilisé
+SEUIL_OUBLI = 0.10  # sous 10 % de force, le réflexe est oublié pendant le sommeil
 
 
 def cle(etape: str) -> str:
@@ -52,16 +62,23 @@ class MemoireReflexes:
             "derniere_utilisation": maintenant,
         }
 
-    def consolider(self, oubli_apres_jours: int = 30) -> int:
-        """Le tri du sommeil : oublie les réflexes jamais réutilisés depuis longtemps.
+    @staticmethod
+    def force(reflexe: dict, maintenant: datetime | None = None) -> float:
+        """La force du réflexe, entre 0 et 1 : 1 juste après usage, puis elle diminue avec le temps."""
+        maintenant = maintenant or datetime.now()
+        jours = (maintenant - datetime.fromisoformat(reflexe["derniere_utilisation"])).total_seconds() / 86400
+        demi_vie = DEMI_VIE_JOURS * (1 + reflexe["utilisations"])  # chaque réutilisation renforce le souvenir
+        return 0.5 ** (max(jours, 0) / demi_vie)  # ** veut dire « puissance »
+
+    def consolider(self, maintenant: datetime | None = None) -> int:
+        """Le tri du sommeil : oublie les réflexes dont la force est tombée sous le seuil.
 
         Renvoie le nombre de réflexes oubliés.
         """
-        limite = datetime.now() - timedelta(days=oubli_apres_jours)
         a_oublier = [
             cle_reflexe
             for cle_reflexe, reflexe in self.reflexes.items()
-            if reflexe["utilisations"] == 0 and datetime.fromisoformat(reflexe["derniere_utilisation"]) < limite
+            if self.force(reflexe, maintenant) < SEUIL_OUBLI
         ]
         for cle_reflexe in a_oublier:
             del self.reflexes[cle_reflexe]

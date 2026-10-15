@@ -28,6 +28,19 @@ Janova suit les mêmes règles que le cerveau :
 
 Concrètement, Janova doit pouvoir tourner sur un ordinateur ordinaire, un téléphone ou un petit robot, sans carte graphique puissante.
 
+## Une IA bio-inspirée
+
+Janova copie le vivant à deux échelles : **son architecture** (noyau, organes, réflexes, sommeil) et **ses mécanismes** :
+
+| Dans le vivant | Dans Janova |
+|---|---|
+| **Neurones à impulsions** : un neurone accumule des signaux, « tire » au-delà d'un seuil, et ne consomme rien au repos | L'organe **social** est un vrai petit réseau de neurones à impulsions. Il apprend par la règle de Hebb, un neurone inhibiteur freine les mots inconnus, et il reste silencieux s'il n'y a rien pour lui |
+| **Homéostasie** : le corps régule son énergie, sa température, sa fatigue | Janova lit sa batterie, sa mémoire libre et sa température, puis passe en mode **économie** (plus d'aide extérieure) ou **survie** (seulement l'essentiel) |
+| **Habituation** : on n'entend plus le tic-tac de l'horloge | Une tâche répétée 3 fois en une minute reçoit une réponse de mémoire immédiate |
+| **Adrénaline** : l'urgence mobilise des réserves | Un mot d'urgence (« urgent », « vite »…) débloque l'aide extérieure en mode économie |
+| **Courbe de l'oubli** : un souvenir s'efface, la répétition le renforce | Chaque réflexe a une force qui baisse de moitié en 7 jours. Chaque réutilisation allonge ce délai, et sous 10 % il s'efface pendant le sommeil |
+| **Évolution** : variations au hasard, sélection des meilleures | Pendant le sommeil, les organes appris font évoluer leurs mots-clés pour éviter leurs fausses alertes, sans jamais perdre ce qu'ils savaient faire |
+
 ## La vision
 
 ### 🧠 Le noyau : un raisonnement minimal qui coordonne
@@ -56,6 +69,11 @@ Face à une situation qu'aucun organe ne sait traiter, Janova peut **se donner u
 | Raisonnement du noyau (niveau 3) | ✅ Relie une étape au résultat précédent (« multiplie le résultat par 4 ») |
 | Aide extérieure (niveau 4) | ✅ Un modèle d'IA **local** via Ollama, en tout dernier recours |
 | Auto-extension | ✅ L'IA écrit un nouvel organe, testé dans un bac à sable, gardé pour la suite |
+| Neurones à impulsions | ✅ Organe `social` : salutations, remerciements, compliments, au revoir, « qui es-tu ? » |
+| Homéostasie | ✅ Modes normal, économie et survie selon la batterie, la mémoire et la température (`/etat`) |
+| Attention | ✅ Habituation aux tâches répétées, urgence qui débloque des ressources |
+| Courbe de l'oubli | ✅ Les réflexes se renforcent à l'usage et s'effacent avec le temps |
+| Évolution | ✅ Les organes appris améliorent leurs mots-clés pendant le sommeil |
 
 ## Organisation des fichiers
 
@@ -71,12 +89,16 @@ Janova/
 │   ├── organes/         les organes spécialisés
 │   │   ├── base.py         le modèle commun : nom, coût, carte graphique, réflexe possible
 │   │   ├── calcul.py       résout les opérations (sans eval, donc sans danger)
-│   │   └── texte.py        majuscules, minuscules, compter les mots, à l'envers
+│   │   ├── texte.py        majuscules, minuscules, compter les mots, à l'envers
+│   │   └── neurones.py     l'organe social, un réseau de neurones à impulsions
 │   ├── aide_exterieure.py le modèle d'IA local (Ollama), en dernier recours
+│   ├── homeostasie.py   signes vitaux (batterie, mémoire, température) et modes économie / survie
+│   ├── attention.py     habituation et urgence
 │   ├── reflexes/        les réflexes appris
-│   │   └── memoire.py      apprendre, retrouver, garder sur le disque, oublier en dormant
+│   │   └── memoire.py      apprendre, retrouver, garder sur le disque, courbe de l'oubli
 │   └── extension/       l'auto-extension
 │       ├── createur.py     fait écrire un organe par l'IA, le teste, l'enregistre
+│       ├── evolution.py    variation et sélection des mots-clés des organes appris
 │       └── bac_a_sable.py  vérifie et exécute sans danger le code écrit par l'IA
 ├── donnees/             ce que Janova apprend sur ta machine (créé tout seul, pas envoyé sur GitHub)
 ├── tests/               les tests automatiques
@@ -151,4 +173,17 @@ toi > convertis 37 celsius en fahrenheit
   1. convertis 37 celsius en fahrenheit → 98.6 °F   [organe celsius_fahrenheit, …]
 ```
 
-Commandes : `/bilan` (toutes les ressources dépensées), `/organes`, `/reflexes`, `/dormir`, `/aide`, `/quitter`.
+Les mécanismes bio-inspirés en action :
+
+```
+toi > Bonjour ! Comment vas-tu ?
+  1. Bonjour → Bonjour ! Je suis Janova. Que puis-je faire pour toi ?   [organe social, …]
+  2. Comment vas-tu → Je vais bien, merci ! Mes réserves d'énergie sont au vert.   [organe social, …]
+
+toi > calcule 2 + 3, puis multiplie le résultat par 4      (3e fois en une minute)
+Tâche répétée : réponse de mémoire immédiate (habituation).
+  1. calcule 2 + 3 → 2 + 3 = 5   [habituation, …]
+  2. multiplie le résultat par 4 → 5 * 4 = 20   [habituation, …]
+```
+
+Commandes : `/bilan` (toutes les ressources dépensées), `/etat` (signes vitaux et mode), `/organes`, `/reflexes`, `/dormir`, `/aide`, `/quitter`.

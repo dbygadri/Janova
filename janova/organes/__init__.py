@@ -9,8 +9,9 @@ puis l'ajouter à la liste TOUS_LES_ORGANES ci-dessous.
 
 from janova.organes.base import Organe
 from janova.organes.calcul import OrganeCalcul
+from janova.organes.neurones import OrganeSocial
 from janova.organes.texte import OrganeTexte
 
-TOUS_LES_ORGANES: list[type[Organe]] = [OrganeCalcul, OrganeTexte]
+TOUS_LES_ORGANES: list[type[Organe]] = [OrganeCalcul, OrganeTexte, OrganeSocial]
 
-__all__ = ["Organe", "OrganeCalcul", "OrganeTexte", "TOUS_LES_ORGANES"]
+__all__ = ["Organe", "OrganeCalcul", "OrganeSocial", "OrganeTexte", "TOUS_LES_ORGANES"]

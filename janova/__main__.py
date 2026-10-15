@@ -9,8 +9,10 @@ from janova.noyau import Janova
 AIDE = """Tape une tâche, par exemple :
   calcule 12 * (3 + 4), puis mets en majuscules : bonjour
   calcule 2 + 3, puis multiplie le résultat par 4
+  bonjour, comment vas-tu ?
 Commandes :
   /bilan     toutes les ressources dépensées (électricité, mémoire, carte graphique, stockage)
+  /etat      signes vitaux (batterie, mémoire, température) et mode choisi
   /reflexes  nombre de réflexes appris
   /organes   la liste des organes (de base et appris) et l'état de l'aide extérieure
   /dormir    sommeil : endort les organes et trie les réflexes
@@ -35,6 +37,8 @@ while True:
         print(janova.bilan())
     elif saisie == "/reflexes":
         print(f"{len(janova.reflexes)} réflexe(s) appris.")
+    elif saisie == "/etat":
+        print(janova.etat())
     elif saisie == "/organes":
         print(janova.organes())
     elif saisie == "/dormir":

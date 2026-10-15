@@ -12,16 +12,25 @@ Pour chaque tâche, le noyau :
    carte graphique et stockage.
 
 Les organes restent endormis tant qu'on n'a pas besoin d'eux (règle 2), et chaque réussite
-d'un organe devient un réflexe (règle 3). La méthode dormir() endort les organes et fait le tri
-dans les réflexes (règle 4).
+d'un organe devient un réflexe (règle 3). La méthode dormir() endort les organes, laisse les réflexes
+inutiles s'effacer et fait évoluer les organes appris (règle 4).
+
+Les mécanismes bio-inspirés qui entourent tout ça :
+- l'attention (attention.py) : une tâche répétée reçoit une réponse de mémoire immédiate (habituation),
+  une tâche urgente a droit à plus de ressources (adrénaline) ;
+- l'homéostasie (homeostasie.py) : selon la batterie, la mémoire et la température, Janova passe en mode
+  économie (plus d'aide extérieure, sauf urgence) ou survie (seulement réflexes et organes de base).
 """
 
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
 from janova.aide_exterieure import AideExterieure
+from janova.attention import Attention
 from janova.energie import CompteurEnergie
 from janova.extension import CreateurOrganes
+from janova.homeostasie import ECONOMIE, NORMAL, SURVIE, Homeostasie
 from janova.noyau.decoupage import decouper_en_etapes
 from janova.noyau.raisonnement import resoudre_references
 from janova.organes import TOUS_LES_ORGANES, Organe
@@ -53,6 +62,7 @@ class Rapport:
 
     tache: str
     etapes: list[ResultatEtape]
+    note: str = ""  # un message de l'attention ou de l'homéostasie (habituation, mode économie…)
 
     @property
     def temps(self) -> float:
@@ -66,7 +76,7 @@ class Rapport:
         """Le rapport sous forme de texte, prêt à afficher."""
         if not self.etapes:
             return "Je n'ai reçu aucune tâche."
-        lignes = []
+        lignes = [self.note] if self.note else []
         for numero, resultat in enumerate(self.etapes, start=1):
             if resultat.reponse is None:
                 lignes.append(f"  {numero}. {resultat.etape} → je ne sais pas encore faire cette étape")
@@ -85,9 +95,13 @@ class Janova:
         dossier_donnees: Path = DOSSIER_DONNEES,
         organes: list[type[Organe]] | None = None,
         aide=_AIDE_PAR_DEFAUT,
+        homeostasie: Homeostasie | None = None,
+        attention: Attention | None = None,
     ) -> None:
         dossier_donnees = Path(dossier_donnees)
         self.compteur = CompteurEnergie()
+        self.homeostasie = homeostasie or Homeostasie()
+        self.attention = attention or Attention()
         self.reflexes = MemoireReflexes(dossier_donnees / "reflexes.json")
         organes_de_base = list(organes or TOUS_LES_ORGANES)
 
@@ -118,22 +132,53 @@ class Janova:
 
     def traiter(self, tache: str) -> Rapport:
         """Découpe la tâche en étapes, traite chacune, et renvoie le rapport."""
+        # --- L'attention : habituation ------------------------------------------------------------
+        # Tâche répétée plusieurs fois en une minute : réponse de mémoire immédiate, sans rien recalculer.
+        if self.attention.remarquer(tache):
+            with self.compteur.mesurer("habituation") as mesure:
+                souvenir = self.attention.souvenir(tache)
+            # La dépense mesurée est partagée entre les étapes, pour ne pas la compter plusieurs fois.
+            part = mesure["temps"] / max(len(souvenir.etapes), 1)
+            etapes = [ResultatEtape(r.etape, r.reponse, "habituation", part, mesure["memoire"])
+                      for r in souvenir.etapes]
+            self._compter(etapes)
+            return Rapport(tache, etapes, "Tâche répétée : réponse de mémoire immédiate (habituation).")
+
+        # --- L'homéostasie et l'urgence : quelles ressources sont permises ? -------------------------
+        mode, raison = self.homeostasie.mode()
+        urgente = self.attention.est_urgente(tache)
+        aide_permise = mode == NORMAL or (mode == ECONOMIE and urgente)  # l'adrénaline lève le mode économie
+        appris_permis = mode != SURVIE  # en survie, pas de bac à sable : seulement l'essentiel
+        note = ""
+        if mode != NORMAL:
+            note = f"Mode {mode} ({raison})"
+            note += " : urgence, ressources débloquées." if urgente and aide_permise else " : aide extérieure coupée."
+            if not appris_permis:
+                note = note[:-1] + ", organes appris en pause."
+
         resultats = []
         reponse_precedente = None  # la mémoire de travail : le résultat de l'étape d'avant (niveau 3)
         for etape in decouper_en_etapes(tache):
-            resultat = self._traiter_etape(etape, reponse_precedente)
+            resultat = self._traiter_etape(etape, reponse_precedente, aide_permise, appris_permis)
             resultats.append(resultat)
             if resultat.reponse is not None:
                 reponse_precedente = resultat.reponse
+        rapport = Rapport(tache, resultats, note)
         if resultats:
-            self.compteur.taches += 1
-            self.compteur.etapes += len(resultats)
+            self._compter(resultats)
             self.reflexes.sauvegarder()  # on garde les nouveaux réflexes, même si Janova est fermée ensuite
-        return Rapport(tache, resultats)
+            self.attention.retenir(tache, rapport)
+        return rapport
 
-    def _traiter_etape(self, etape: str, reponse_precedente: str | None) -> ResultatEtape:
+    def _compter(self, resultats: list[ResultatEtape]) -> None:
+        self.compteur.taches += 1
+        self.compteur.etapes += len(resultats)
+
+    def _traiter_etape(
+        self, etape: str, reponse_precedente: str | None, aide_permise: bool = True, appris_permis: bool = True
+    ) -> ResultatEtape:
         # --- Niveaux 1 et 2 : un réflexe, sinon un organe ------------------------------------------
-        resultat = self._par_reflexe(etape) or self._par_organes(etape)
+        resultat = self._par_reflexe(etape) or self._par_organes(etape, appris_permis)
         if resultat is not None:
             return resultat
 
@@ -141,14 +186,14 @@ class Janova:
         # « multiplie le résultat par 4 » → « multiplie « 5 » par 4 », redonnée aux réflexes et aux organes.
         etape_reecrite = resoudre_references(etape, reponse_precedente)
         if etape_reecrite is not None:
-            resultat = self._par_reflexe(etape_reecrite) or self._par_organes(etape_reecrite)
+            resultat = self._par_reflexe(etape_reecrite) or self._par_organes(etape_reecrite, appris_permis)
             if resultat is not None:
                 resultat.etape = etape
                 resultat.niveau = f"raisonnement + {resultat.niveau}"
                 return resultat
 
         # --- Niveau 4 : l'aide extérieure, et l'auto-extension ------------------------------------
-        if self.createur is not None:
+        if self.createur is not None and aide_permise:
             resultat = self._par_aide_exterieure(etape, etape_reecrite or etape)
             if resultat is not None:
                 return resultat
@@ -165,15 +210,21 @@ class Janova:
         self.compteur.temps_economise += max(reflexe.get("temps_initial", 0.0) - mesure["temps"], 0)
         return ResultatEtape(etape, reflexe["reponse"], "réflexe", mesure["temps"], mesure["memoire"])
 
-    def _par_organes(self, etape: str) -> ResultatEtape | None:
+    def _par_organes(self, etape: str, appris_permis: bool = True) -> ResultatEtape | None:
         """Niveau 2 (règles 1 et 2) : confie l'étape au moins cher des organes qui la reconnaissent."""
         for classe in self.organes_disponibles:
+            appris = hasattr(classe, "fiche")
+            if appris and not appris_permis:
+                continue  # mode survie : les organes appris (et leur bac à sable) restent au repos
             # On demande d'abord à l'organe endormi s'il reconnaît l'étape : ça ne coûte presque rien.
             if not classe.reconnait(etape):
                 continue
             with self.compteur.mesurer(f"organe {classe.nom}") as mesure:
                 organe = self._reveiller(classe)
                 reponse = organe.traiter(etape)
+            if reponse is None and appris and self.createur is not None:
+                # Fausse alerte : réveillé pour rien. On la note pour que l'organe évolue pendant le sommeil.
+                self.createur.noter_fausse_alerte(classe, etape)
             if reponse is not None:
                 # Règle 3 : une réussite devient un réflexe, si la réponse ne change jamais.
                 if classe.deterministe:
@@ -215,7 +266,10 @@ class Janova:
         for classe in self.organes_disponibles:
             etat = "réveillé" if classe.nom in self.organes_eveilles else "endormi"
             gpu = ", carte graphique" if classe.besoin_gpu else ""
-            appris = " (appris)" if hasattr(classe, "code") else ""
+            appris = ""
+            if hasattr(classe, "fiche"):
+                appris = (f" (appris, génération {classe.fiche.get('generation', 1)},"
+                          f" mots-clés : {', '.join(classe.mots_cles)})")
             lignes.append(f"  - {classe.nom}{appris} : coût {classe.cout}{gpu}, {etat}")
         if self.createur is None:
             lignes.append("Aide extérieure : désactivée")
@@ -224,6 +278,10 @@ class Janova:
         else:
             lignes.append(f"Aide extérieure : {self.createur.aide.modele} via Ollama (en dernier recours)")
         return "\n".join(lignes)
+
+    def etat(self) -> str:
+        """Les signes vitaux et le mode choisi par l'homéostasie."""
+        return self.homeostasie.etat()
 
     def bilan(self) -> str:
         """Le bilan de toutes les ressources dépensées depuis le démarrage."""
@@ -236,13 +294,25 @@ class Janova:
             taille += sum(f.stat().st_size for f in self.createur.dossier.glob("*.json")) / 1024
         return taille
 
-    def dormir(self, oubli_apres_jours: int = 30) -> str:
-        """Le sommeil : endort tous les organes (règle 2) et fait le tri dans les réflexes (règle 4)."""
+    def dormir(self) -> str:
+        """Le sommeil (règle 4) : endormir les organes, faire évoluer les organes appris, oublier ce qui ne sert pas."""
         endormis = len(self.organes_eveilles)
         self.organes_eveilles.clear()
-        oublies = self.reflexes.consolider(oubli_apres_jours)
+
+        # Évolution : les organes appris qui ont eu des fausses alertes essaient de meilleurs mots-clés.
+        # Leurs étapes réussies (retrouvées dans les réflexes) servent de référence à ne jamais perdre.
+        evolues = 0
+        if self.createur is not None:
+            for classe in self.organes_disponibles:
+                if hasattr(classe, "fiche"):
+                    reussies = [cle for cle, r in self.reflexes.reflexes.items() if r["organe"] == classe.nom]
+                    # crc32 donne un nombre fixe pour chaque nom : la même nuit donne toujours le même résultat.
+                    if self.createur.faire_evoluer(classe, reussies, graine=zlib.crc32(classe.nom.encode())):
+                        evolues += 1
+
+        oublies = self.reflexes.consolider()  # la courbe de l'oubli : les réflexes trop faibles s'effacent
         self.reflexes.sauvegarder()
         return (
-            f"Bonne nuit. {endormis} organe(s) endormi(s), {oublies} réflexe(s) inutile(s) oublié(s), "
-            f"{len(self.reflexes)} réflexe(s) gardé(s)."
+            f"Bonne nuit. {endormis} organe(s) endormi(s), {evolues} organe(s) appris amélioré(s) par évolution, "
+            f"{oublies} réflexe(s) effacé(s), {len(self.reflexes)} réflexe(s) gardé(s)."
         )
