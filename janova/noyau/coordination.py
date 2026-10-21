@@ -20,6 +20,11 @@ Les mécanismes bio-inspirés qui entourent tout ça :
   une tâche urgente a droit à plus de ressources (adrénaline) ;
 - l'homéostasie (homeostasie.py) : selon la batterie, la mémoire et la température, Janova passe en mode
   économie (plus d'aide extérieure, sauf urgence) ou survie (seulement réflexes et organes de base).
+
+Et autour de l'architecture « corps vivant » :
+- les décisions rapides (decision.py), inspirées de Jev : choisir parmi des options, avec un % de confiance ;
+- le carnet d'idées (idees.py) : chaque idée est rangée par ces décisions dans un graphe façon Obsidian ;
+- la croissance (croissance.py) : le journal de qui a résolu chaque étape, le taux d'autonomie et le stade de vie.
 """
 
 import zlib
@@ -28,9 +33,12 @@ from pathlib import Path
 
 from janova.aide_exterieure import AideExterieure
 from janova.attention import Attention
+from janova.croissance import Croissance
+from janova.decision import Decideur
 from janova.energie import CompteurEnergie
 from janova.extension import CreateurOrganes
 from janova.homeostasie import ECONOMIE, NORMAL, SURVIE, Homeostasie
+from janova.idees import CarnetIdees
 from janova.noyau.decoupage import decouper_en_etapes
 from janova.noyau.raisonnement import resoudre_references
 from janova.organes import TOUS_LES_ORGANES, Organe
@@ -103,6 +111,8 @@ class Janova:
         self.homeostasie = homeostasie or Homeostasie()
         self.attention = attention or Attention()
         self.reflexes = MemoireReflexes(dossier_donnees / "reflexes.json")
+        self.croissance = Croissance(dossier_donnees / "croissance.json")
+        self.decideur = Decideur(dossier_donnees / "decisions.json")
         organes_de_base = list(organes or TOUS_LES_ORGANES)
 
         # Niveau 4 et auto-extension. aide=None : Janova se débrouille sans aucune IA.
@@ -114,6 +124,7 @@ class Janova:
                 aide, dossier_donnees / "organes_appris", noms_reserves={o.nom for o in organes_de_base}
             )
             organes_appris = self.createur.charger_tous()  # les organes créés lors des utilisations précédentes
+        self.idees = CarnetIdees(dossier_donnees / "idees", self.decideur, aide)
 
         # Règle 1 : on range les organes du moins cher au plus cher.
         self.organes_disponibles = organes_de_base + organes_appris
@@ -142,12 +153,15 @@ class Janova:
             etapes = [ResultatEtape(r.etape, r.reponse, "habituation", part, mesure["memoire"])
                       for r in souvenir.etapes]
             self._compter(etapes)
+            for resultat in etapes:
+                self.croissance.noter(resultat.niveau if resultat.reponse is not None else "aucun")
+            self.croissance.sauvegarder()
             return Rapport(tache, etapes, "Tâche répétée : réponse de mémoire immédiate (habituation).")
 
         # --- L'homéostasie et l'urgence : quelles ressources sont permises ? -------------------------
         mode, raison = self.homeostasie.mode()
         urgente = self.attention.est_urgente(tache)
-        aide_permise = mode == NORMAL or (mode == ECONOMIE and urgente)  # l'adrénaline lève le mode économie
+        aide_permise = self._aide_permise(mode, urgente)
         appris_permis = mode != SURVIE  # en survie, pas de bac à sable : seulement l'essentiel
         note = ""
         if mode != NORMAL:
@@ -166,9 +180,35 @@ class Janova:
         rapport = Rapport(tache, resultats, note)
         if resultats:
             self._compter(resultats)
+            for resultat in resultats:
+                self.croissance.noter(resultat.niveau)
+            self.croissance.sauvegarder()
             self.reflexes.sauvegarder()  # on garde les nouveaux réflexes, même si Janova est fermée ensuite
             self.attention.retenir(tache, rapport)
         return rapport
+
+    @staticmethod
+    def _aide_permise(mode: str, urgente: bool) -> bool:
+        """L'aide extérieure est permise en mode normal, ou en mode économie si c'est urgent (l'adrénaline)."""
+        return mode == NORMAL or (mode == ECONOMIE and urgente)
+
+    def ranger_idee(self, saisie: str):
+        """Range une idée dans le carnet : toi, puis réflexe de décision, puis professeur (voir idees.py)."""
+        mode, _ = self.homeostasie.mode()
+        aide_permise = self.createur is not None and self._aide_permise(mode, self.attention.est_urgente(saisie))
+        with self.compteur.mesurer("idées") as mesure:
+            idee = self.idees.ranger(saisie, aide_permise)
+        idee.temps = mesure["temps"]
+        if idee.rangee_par == "professeur":
+            self.compteur.organes_gpu.add(self.createur.aide.nom)
+        self.croissance.noter(idee.rangee_par)
+        self.croissance.sauvegarder()
+        return idee
+
+    def etat_croissance(self) -> str:
+        """Le stade de vie, le taux d'autonomie et ce que Janova a appris."""
+        appris = sum(1 for classe in self.organes_disponibles if hasattr(classe, "fiche"))
+        return self.croissance.resume(len(self.reflexes), appris, len(self.idees))
 
     def _compter(self, resultats: list[ResultatEtape]) -> None:
         self.compteur.taches += 1
@@ -312,6 +352,8 @@ class Janova:
 
         oublies = self.reflexes.consolider()  # la courbe de l'oubli : les réflexes trop faibles s'effacent
         self.reflexes.sauvegarder()
+        self.croissance.sauvegarder()
+        self.idees.sauvegarder()
         return (
             f"Bonne nuit. {endormis} organe(s) endormi(s), {evolues} organe(s) appris amélioré(s) par évolution, "
             f"{oublies} réflexe(s) effacé(s), {len(self.reflexes)} réflexe(s) gardé(s)."

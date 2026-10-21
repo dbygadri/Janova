@@ -55,6 +55,8 @@ Quand une même situation revient souvent, Janova n'a plus besoin d'y réfléchi
 ### 🌱 L'auto-extension : grandir toute seule
 Face à une situation qu'aucun organe ne sait traiter, Janova peut **se donner une nouvelle capacité** : un nouveau réflexe, voire un nouvel organe. Elle grandit avec ce qu'elle vit.
 
+L'architecture complète et la feuille de route sont décrites dans [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Où en est le projet ?
 
 | Partie | État |
@@ -74,6 +76,9 @@ Face à une situation qu'aucun organe ne sait traiter, Janova peut **se donner u
 | Attention | ✅ Habituation aux tâches répétées, urgence qui débloque des ressources |
 | Courbe de l'oubli | ✅ Les réflexes se renforcent à l'usage et s'effacent avec le temps |
 | Évolution | ✅ Les organes appris améliorent leurs mots-clés pendant le sommeil |
+| Décisions rapides (façon Jev) | ✅ Choisir, noter, oui/non, avec un % de confiance, appris par l'exemple |
+| Carnet d'idées | ✅ Rangement automatique, notes Markdown reliées entre elles (graphe façon Obsidian) |
+| Croissance | ✅ Taux d'autonomie et stade de vie : bébé, enfant, adulte (`/croissance`) |
 
 ## Organisation des fichiers
 
@@ -82,6 +87,9 @@ Janova/
 ├── janova/              le code de Janova
 │   ├── __main__.py      la démonstration (python -m janova)
 │   ├── energie.py       le compteur d'énergie : électricité, mémoire, carte graphique, stockage
+│   ├── decision.py      les décisions rapides façon Jev : choisir parmi des options, avec confiance
+│   ├── idees.py         le carnet d'idées : rangement automatique et graphe de notes
+│   ├── croissance.py    le taux d'autonomie et les stades de vie
 │   ├── noyau/           le cerveau : reçoit une tâche, la découpe, coordonne
 │   │   ├── decoupage.py    découpage d'une tâche en étapes
 │   │   ├── coordination.py les 4 niveaux, du moins cher au plus cher ; réveil des organes ; sommeil
@@ -103,6 +111,7 @@ Janova/
 ├── donnees/             ce que Janova apprend sur ta machine (créé tout seul, pas envoyé sur GitHub)
 ├── tests/               les tests automatiques
 ├── requirements.txt     les bibliothèques nécessaires (aucune pour l'instant)
+├── ARCHITECTURE.md      l'architecture « corps vivant » et la feuille de route
 └── README.md            ce fichier
 ```
 
@@ -186,4 +195,21 @@ Tâche répétée : réponse de mémoire immédiate (habituation).
   2. multiplie le résultat par 4 → 5 * 4 = 20   [habituation, …]
 ```
 
-Commandes : `/bilan` (toutes les ressources dépensées), `/etat` (signes vitaux et mode), `/organes`, `/reflexes`, `/dormir`, `/aide`, `/quitter`.
+Le carnet d'idées et la croissance :
+
+```
+toi > /idee alkestore : ajouter le paiement mobile
+Idée n°1 rangée dans « alkestore » [toi, 100%]
+  importance moyenne, action « à faire »
+
+toi > /idee paiement mobile alkestore avec Orange Money
+Idée n°2 rangée dans « alkestore » [réflexe, 100%]
+  importance basse, action « à faire », reliée aux idées n°1
+
+toi > /croissance
+Stade : bébé   (autonomie 100% sur 2 étape(s))
+```
+
+Chaque idée est une note Markdown dans `donnees/idees/` : ouvre ce dossier dans [Obsidian](https://obsidian.md) pour voir le graphe. Si Janova n'est pas sûre de la catégorie, elle demande au professeur (Ollama) et retient la leçon ; sans professeur, l'idée attend que tu la classes avec `/classer`.
+
+Commandes : `/idee`, `/idees`, `/classer`, `/croissance`, `/bilan` (toutes les ressources dépensées), `/etat` (signes vitaux et mode), `/organes`, `/reflexes`, `/dormir`, `/aide`, `/quitter`.

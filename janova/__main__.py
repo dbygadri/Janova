@@ -16,6 +16,10 @@ Commandes :
   /reflexes  nombre de réflexes appris
   /organes   la liste des organes (de base et appris) et l'état de l'aide extérieure
   /dormir    sommeil : endort les organes et trie les réflexes
+  /idee      ranger une idée, ex. : /idee alkestore : ajouter le paiement mobile
+  /idees     toutes tes idées, rangées par catégorie
+  /classer   corriger la catégorie d'une idée, ex. : /classer 3 alkestore
+  /croissance  stade de vie, taux d'autonomie et ce que Janova a appris
   /aide      cette aide
   /quitter   fermer Janova"""
 
@@ -43,6 +47,18 @@ while True:
         print(janova.organes())
     elif saisie == "/dormir":
         print(janova.dormir())
+    elif saisie.startswith("/idee "):
+        print(janova.ranger_idee(saisie[len("/idee "):]).texte_affiche())
+    elif saisie == "/idees":
+        print(janova.idees.lister())
+    elif saisie.startswith("/classer"):
+        morceaux = saisie.split(maxsplit=2)
+        if len(morceaux) == 3 and morceaux[1].isdigit():
+            print(janova.idees.classer(int(morceaux[1]), morceaux[2]))
+        else:
+            print("Écris par exemple : /classer 3 alkestore")
+    elif saisie == "/croissance":
+        print(janova.etat_croissance())
     elif saisie == "/aide":
         print(AIDE)
     elif saisie.startswith("/"):
