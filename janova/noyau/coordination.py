@@ -37,6 +37,7 @@ from pathlib import Path
 
 from janova.aide_exterieure import AideExterieure
 from janova.attention import Attention
+from janova.codeur import Atelier
 from janova.croissance import Croissance
 from janova.decision import Decideur
 from janova.energie import CompteurEnergie
@@ -148,6 +149,10 @@ class Janova:
         self.yeux = Yeux(dossier_donnees / "yeux", contexte_systeme.maison if contexte_systeme else None)
         self.routines = Routines(dossier_donnees / "routines.json")
         self.mains = Mains(dossier_donnees / "mains", self.decideur, contexte_systeme, aide, self.yeux.noter)
+        # L'atelier de code : le professeur spécialisé en code d'abord (s'il est installé), sinon le général.
+        aide_code = AideExterieure.pour_le_code() if aide is not None and isinstance(aide, AideExterieure) else None
+        self.atelier = Atelier(dossier_donnees / "atelier", aide, aide_code)
+        self.mains.contexte.atelier = self.atelier
         # Ce qui attend ton accord (oui / non) : des gestes des mains ou des routines proposées par les yeux.
         self.en_attente: list[Proposition | PropositionRoutine] = []
         self._derniere_proposition_d_habitude = datetime.min

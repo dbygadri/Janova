@@ -67,6 +67,7 @@ class Contexte:
     maison: Path = field(default_factory=Path.home)
     executeur: Executeur = field(default_factory=Executeur)
     bureau: str = field(default_factory=bureau_actuel)
+    atelier: object = None  # l'atelier de code (codeur/atelier.py), branché par le noyau
 
 
 def sans_accents(texte: str) -> str:
@@ -338,6 +339,19 @@ def notifier(contexte: Contexte, texte: str) -> Resultat:
     return Resultat(f"Notification : {texte}", code == 0)
 
 
+def creer_application(contexte: Contexte, demande: str) -> Resultat:
+    """Code, teste et installe une application (voir codeur/atelier.py)."""
+    if contexte.atelier is None:
+        return Resultat("Mon atelier de code n'est pas branché.", False)
+    return contexte.atelier.creer(contexte.maison, demande)
+
+
+def modifier_application(contexte: Contexte, nom: str, demande: str) -> Resultat:
+    if contexte.atelier is None:
+        return Resultat("Mon atelier de code n'est pas branché.", False)
+    return contexte.atelier.modifier(contexte.maison, nom, demande)
+
+
 # --- Le catalogue ------------------------------------------------------------------------------------
 
 
@@ -359,4 +373,8 @@ PRIMITIVES = {p.nom: p for p in [
     Primitive("fond_ecran", "changer le fond d'écran", ("image",), FAIBLE, fond_ecran),
     Primitive("theme", "changer le thème", ("mode",), FAIBLE, theme),
     Primitive("notifier", "afficher une notification", ("texte",), FAIBLE, notifier),
+    Primitive("creer_application", "coder une application, la tester et l'installer", ("demande",), MOYEN,
+              creer_application),
+    Primitive("modifier_application", "modifier une application que j'ai codée", ("nom", "demande"), MOYEN,
+              modifier_application),
 ]}

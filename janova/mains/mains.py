@@ -75,6 +75,16 @@ def comprendre(etape: str) -> list[tuple[str, dict[str, str]]] | None:
     s = sans_accents(etape).strip()  # même longueur que l'original : les positions correspondent
     o = etape.strip()
 
+    modifie = re.match(r"(modifie|ameliore|corrige|change)\w*\s+(?:l'|le |la |mon |ma )?"
+                       r"(?:application |appli |programme |jeu )?([^:]+?)\s*:\s*(.+)$", s)
+    if modifie and "theme" not in s and "fond" not in s:
+        return [("modifier_application", {"nom": o[modifie.start(2):modifie.end(2)].strip(),
+                                          "demande": o[modifie.start(3):].strip()})]
+    if re.search(r"\b(cree|code|programme|developpe|fabrique|ecris|fais|construis)\w*\b", s) and "dossier" not in s \
+            and re.search(r"\b(application|appli|app|programme|script|logiciel|jeu|outil|calculatrice|calculette|"
+                          r"minuteur|chronometre|chrono|bloc[- ]notes|convertisseur|horloge|compteur|generateur|"
+                          r"quiz|agenda|todo|liste de taches)\b", s):
+        return [("creer_application", {"demande": o.strip(" .!")})]
     if "fond d'ecran" in s or "fond d ecran" in s or "fond-d-ecran" in s or "wallpaper" in s:
         image = re.search(r"(~?/\S+\.(?:jpe?g|png|webp))", o, re.IGNORECASE)
         return [("fond_ecran", {"image": image.group(1) if image else ""})]

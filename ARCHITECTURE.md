@@ -86,11 +86,12 @@ Janova vit sur le bureau : une fenêtre où tu lui parles, des mains pour agir, 
 | **Confiance graduelle** | Demande d'abord, agit seule après 3 accords pour un même geste | Un refus remet à zéro ; la corbeille demande toujours |
 | **Recettes** | Une demande nouvelle est traduite par le professeur en gestes connus, puis gardée | Gardée seulement si tu l'acceptes ; un geste inconnu est rejeté |
 | **Routines** (`routines.py`) | « tous les matins, change mon thème » | Une seule exécution par jour |
+| **Codeur** (`codeur/`) | Code une application, l'essaie, renvoie les erreurs au professeur jusqu'à ce qu'elle marche, l'installe dans le menu ; la modifie ensuite | Lecture de sécurité + essai isolé ; ton accord avant d'installer ; l'ancienne version est gardée |
 | **Yeux** (`yeux.py`) | Remarquent ce que tu fais au même moment 3 jours différents, et proposent une routine | Fermés par défaut ; seulement tes demandes et les fichiers récents ; tout reste local |
 
 L'autonomie grandit d'elle-même : chaque « oui » rend un geste automatique, chaque leçon du professeur devient une recette, chaque habitude devient une routine.
 
-Prochaines briques : de nouveaux gestes (volume, luminosité, wifi, capture d'écran), et la création d'applications (« crée-moi une calculatrice ») avec l'auto-extension.
+Prochaines briques : de nouveaux gestes (volume, luminosité, wifi, capture d'écran) ; que les applications codées par le professeur deviennent des modèles que Janova refait seule ; qu'elle code ses propres organes et gestes.
 
 ## Limites honnêtes
 

@@ -85,6 +85,7 @@ L'architecture complète et la feuille de route sont décrites dans [ARCHITECTUR
 | Routines | ✅ « tous les matins, change mon thème » |
 | Yeux | ✅ Fermés par défaut ; repèrent tes habitudes et proposent des routines (`/yeux oui`) |
 | Fenêtre sur le bureau | ✅ Zone de texte, boutons oui/non, démarrage avec la session |
+| Codeur | ✅ Code des applications, les teste, se corrige seule et les installe dans le menu (`/applications`) |
 
 ## Organisation des fichiers
 
@@ -97,6 +98,7 @@ Janova/
 │   ├── idees.py         le carnet d'idées : rangement automatique et graphe de notes
 │   ├── croissance.py    le taux d'autonomie et les stades de vie
 │   ├── mains/           agir sur Linux : gestes sûrs (primitives), confiance graduelle, recettes
+│   ├── codeur/          coder des applications : modèles, contrôle qualité, auto-correction, installation
 │   ├── yeux.py          remarquer tes habitudes (fermés par défaut, tout reste local)
 │   ├── routines.py      les tâches à heure fixe (« tous les matins… »)
 │   ├── conversation.py  tout ce que tu écris, dans le terminal comme dans la fenêtre
@@ -146,6 +148,22 @@ toi > oui
 2 fichier(s) rangé(s) dans Téléchargements : 1 Documents, 1 Images.
 toi > tous les matins, change mon thème
 C'est noté : tous les jours à 08:00 : change mon thème.
+```
+
+### Janova code
+
+```
+toi > crée-moi une calculatrice
+toi > oui
+J'ai codé et testé « Calculatrice » (de mémoire, sans professeur). Elle est dans ton menu des applications.
+toi > modifie calculatrice : ajoute une touche racine carrée
+```
+
+Elle sait déjà coder une calculatrice, un minuteur et un bloc-notes sans aide. Pour tout le reste (« code un jeu de morpion », « fais-moi un programme qui convertit des euros »), elle demande à son professeur, essaie le programme, lui renvoie les erreurs jusqu'à ce que ça marche (4 essais maximum), puis l'installe. Chaque application passe une lecture de sécurité : pas de réseau, pas de commandes système, rien qui efface des fichiers. Pour lui donner son professeur de code :
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5-coder:3b
 ```
 
 Après 3 « oui » pour un même geste, Janova le fait seule. Elle ne supprime jamais rien définitivement (au pire, la corbeille, et elle demande toujours), et `/annuler` défait sa dernière action. Pour qu'elle remarque tes habitudes : `/yeux oui`.

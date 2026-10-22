@@ -11,6 +11,7 @@ afin de ne plus en avoir besoin la fois suivante.
 Réglages (facultatifs), par variables d'environnement :
     JANOVA_MODELE      le modèle à utiliser (par défaut qwen2.5:1.5b, petit et économe)
     JANOVA_OLLAMA_URL  l'adresse d'Ollama (par défaut http://127.0.0.1:11434)
+    JANOVA_MODELE_CODE le modèle qui code les applications (par défaut qwen2.5-coder:3b)
 """
 
 import json
@@ -20,6 +21,7 @@ import urllib.request
 
 MODELE_PAR_DEFAUT = "qwen2.5:1.5b"  # environ 1 Go : un des plus petits modèles capables d'écrire du code
 URL_PAR_DEFAUT = "http://127.0.0.1:11434"
+MODELE_CODE_PAR_DEFAUT = "qwen2.5-coder:3b"  # environ 2 Go : spécialisé en code, tourne sans carte graphique
 
 
 class AideExterieure:
@@ -35,6 +37,11 @@ class AideExterieure:
         # Si Ollama ne répond pas une fois, on ne réessaie plus pendant cette session :
         # attendre une réponse qui ne viendra pas, c'est aussi gaspiller de l'énergie.
         self.indisponible = ""
+
+    @classmethod
+    def pour_le_code(cls) -> "AideExterieure":
+        """Le professeur qui code : un modèle spécialisé, plus patient (écrire une application prend du temps)."""
+        return cls(os.environ.get("JANOVA_MODELE_CODE", MODELE_CODE_PAR_DEFAUT), delai_secondes=600.0)
 
     def demander(self, question: str, en_json: bool = False) -> str | None:
         """Pose une question au modèle. Renvoie sa réponse, ou None s'il est injoignable."""

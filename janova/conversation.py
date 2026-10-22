@@ -14,10 +14,12 @@ AIDE = """Parle-moi normalement, par exemple :
   range mes téléchargements           mets le thème sombre
   change le fond d'écran              ouvre firefox
   tous les matins, change mon thème   calcule 12 * (3 + 4)
+  crée-moi une calculatrice           modifie calculatrice : ajoute une touche racine carrée
 Quand je propose une action, réponds oui ou non.
 Commandes :
   /annuler     défaire ma dernière action sur l'ordinateur
   /confiance   ce que je fais seule et ce pour quoi je te demande encore
+  /applications  les applications que j'ai codées
   /routines    tes routines   (/routine-supprimer 2 pour en retirer une)
   /yeux oui    me laisser remarquer tes habitudes (/yeux non pour arrêter)
   /idee        ranger une idée, ex. : /idee alkestore : ajouter le paiement mobile
@@ -69,6 +71,8 @@ class Conversation:
             return j.dormir()
         if commande == "/annuler":
             return j.mains.annuler()
+        if commande == "/applications":
+            return j.atelier.lister()
         if commande == "/confiance":
             return j.mains.confiance.resume()
         if commande == "/routines":
