@@ -70,19 +70,27 @@ Seuils provisoires, à ajuster avec les premières vraies mesures.
 3. ✅ **Échelle d'escalade + métabolisme** : réflexe → organe → noyau → professeur, coût mesuré.
 4. ✅ **Organes + système immunitaire** : organes écrits par l'IA, testés dans un bac à sable.
 5. 🔜 **Rétrograder** les réflexes et organes qui se trompent souvent.
-6. 🔜 **Janova sur Linux** : voir plus bas.
+6. ✅ **Janova sur Linux** : fenêtre, mains, confiance graduelle, routines, yeux (voir plus bas).
 7. 🔜 **Apprentissage du noyau** (PC avec carte graphique) : réentraînement léger LoRA.
 8. 🧪 **Noyau récursif** : tester l'approche TRM sur le découpage de tâches.
 9. 🤖 **Corps** (robot, Raspberry Pi) : réflexes moteurs avec des réseaux « liquides ».
 
 ## Janova sur Linux : un système géré par l'IA
 
-L'objectif : Janova tourne en permanence sur l'ordinateur et s'occupe de la machine.
+Janova vit sur le bureau : une fenêtre où tu lui parles, des mains pour agir, des yeux pour apprendre tes habitudes.
 
-- **Un service de fond** (systemd) : Janova démarre avec l'ordinateur et dort quand la machine ne fait rien.
-- **Des organes système** : lire l'état de la machine (disque, mémoire, mises à jour), ranger les fichiers, surveiller.
-- **Des réflexes système** : « disque presque plein → proposer un nettoyage », décidés en millisecondes.
-- **Un système immunitaire renforcé** : Janova propose, tu valides. Aucune commande qui supprime ou modifie le système sans ton accord. Tout est noté et réversible.
+| Brique | Ce qu'elle fait | Garde-fou |
+| --- | --- | --- |
+| **Fenêtre** (`fenetre.py`) | Zone de texte, boutons oui/non, démarre avec la session | Janova travaille dans un fil à part : la fenêtre ne gèle jamais |
+| **Mains** (`mains/`) | Gestes connus : ranger, déplacer, ouvrir, fond d'écran, thème, corbeille, notifier | Aucune commande inventée ; jamais d'effacement définitif ; `/annuler` |
+| **Confiance graduelle** | Demande d'abord, agit seule après 3 accords pour un même geste | Un refus remet à zéro ; la corbeille demande toujours |
+| **Recettes** | Une demande nouvelle est traduite par le professeur en gestes connus, puis gardée | Gardée seulement si tu l'acceptes ; un geste inconnu est rejeté |
+| **Routines** (`routines.py`) | « tous les matins, change mon thème » | Une seule exécution par jour |
+| **Yeux** (`yeux.py`) | Remarquent ce que tu fais au même moment 3 jours différents, et proposent une routine | Fermés par défaut ; seulement tes demandes et les fichiers récents ; tout reste local |
+
+L'autonomie grandit d'elle-même : chaque « oui » rend un geste automatique, chaque leçon du professeur devient une recette, chaque habitude devient une routine.
+
+Prochaines briques : de nouveaux gestes (volume, luminosité, wifi, capture d'écran), et la création d'applications (« crée-moi une calculatrice ») avec l'auto-extension.
 
 ## Limites honnêtes
 

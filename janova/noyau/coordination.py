@@ -24,11 +24,15 @@ Les mécanismes bio-inspirés qui entourent tout ça :
 Et autour de l'architecture « corps vivant » :
 - les décisions rapides (decision.py), inspirées de Jev : choisir parmi des options, avec un % de confiance ;
 - le carnet d'idées (idees.py) : chaque idée est rangée par ces décisions dans un graphe façon Obsidian ;
-- la croissance (croissance.py) : le journal de qui a résolu chaque étape, le taux d'autonomie et le stade de vie.
+- la croissance (croissance.py) : le journal de qui a résolu chaque étape, le taux d'autonomie et le stade de vie ;
+- les mains (mains/) : agir sur l'ordinateur avec des gestes sûrs ; Janova demande ton accord tant qu'elle
+  n'a pas gagné ta confiance pour un geste (niveau 2 bis, juste après les organes) ;
+- les yeux (yeux.py) et les routines (routines.py) : remarquer tes habitudes et les faire à ta place.
 """
 
 import zlib
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from janova.aide_exterieure import AideExterieure
@@ -39,10 +43,13 @@ from janova.energie import CompteurEnergie
 from janova.extension import CreateurOrganes
 from janova.homeostasie import ECONOMIE, NORMAL, SURVIE, Homeostasie
 from janova.idees import CarnetIdees
+from janova.mains import Contexte, Mains, Proposition
 from janova.noyau.decoupage import decouper_en_etapes
 from janova.noyau.raisonnement import resoudre_references
 from janova.organes import TOUS_LES_ORGANES, Organe
 from janova.reflexes import MemoireReflexes
+from janova.routines import Routines, extraire_routine
+from janova.yeux import Habitude, Yeux
 
 # Le dossier où Janova garde ce qu'elle apprend : « donnees/ », à la racine du projet.
 # __file__ est le chemin de ce fichier ; parents[2] remonte de noyau/ → janova/ → racine du projet.
@@ -62,6 +69,18 @@ class ResultatEtape:
     niveau: str  # qui a répondu : « réflexe », « organe calcul »… ou « aucun »
     temps: float  # électricité : temps de calcul, en microsecondes (µs)
     memoire: float  # mémoire vive : pic utilisé, en kilo-octets (Ko)
+
+
+@dataclass
+class PropositionRoutine:
+    """Une habitude repérée par les yeux, que Janova propose de transformer en routine."""
+
+    habitude: Habitude
+
+    def decrire(self) -> str:
+        h = self.habitude
+        return (f"j'ai remarqué que tu fais « {h.quoi} » le {h.moment} ({h.jours} jours différents). "
+                f"Je le fais pour toi chaque jour à {h.heure} ?")
 
 
 @dataclass
@@ -105,6 +124,7 @@ class Janova:
         aide=_AIDE_PAR_DEFAUT,
         homeostasie: Homeostasie | None = None,
         attention: Attention | None = None,
+        contexte_systeme: Contexte | None = None,
     ) -> None:
         dossier_donnees = Path(dossier_donnees)
         self.compteur = CompteurEnergie()
@@ -125,6 +145,12 @@ class Janova:
             )
             organes_appris = self.createur.charger_tous()  # les organes créés lors des utilisations précédentes
         self.idees = CarnetIdees(dossier_donnees / "idees", self.decideur, aide)
+        self.yeux = Yeux(dossier_donnees / "yeux", contexte_systeme.maison if contexte_systeme else None)
+        self.routines = Routines(dossier_donnees / "routines.json")
+        self.mains = Mains(dossier_donnees / "mains", self.decideur, contexte_systeme, aide, self.yeux.noter)
+        # Ce qui attend ton accord (oui / non) : des gestes des mains ou des routines proposées par les yeux.
+        self.en_attente: list[Proposition | PropositionRoutine] = []
+        self._derniere_proposition_d_habitude = datetime.min
 
         # Règle 1 : on range les organes du moins cher au plus cher.
         self.organes_disponibles = organes_de_base + organes_appris
@@ -184,7 +210,9 @@ class Janova:
                 self.croissance.noter(resultat.niveau)
             self.croissance.sauvegarder()
             self.reflexes.sauvegarder()  # on garde les nouveaux réflexes, même si Janova est fermée ensuite
-            self.attention.retenir(tache, rapport)
+            # Une tâche qui agit sur l'ordinateur ne doit jamais être « répondue de mémoire » : on ne la retient pas.
+            if not any(r.niveau.startswith("mains") or "recette" in r.niveau for r in resultats):
+                self.attention.retenir(tache, rapport)
         return rapport
 
     @staticmethod
@@ -222,6 +250,11 @@ class Janova:
         if resultat is not None:
             return resultat
 
+        # --- Niveau 2 bis : les mains (une action sur l'ordinateur, par réflexe ou recette apprise) -------
+        resultat = self._par_mains(etape, aide_permise=False)
+        if resultat is not None:
+            return resultat
+
         # --- Niveau 3 : le raisonnement du noyau --------------------------------------------------
         # « multiplie le résultat par 4 » → « multiplie « 5 » par 4 », redonnée aux réflexes et aux organes.
         etape_reecrite = resoudre_references(etape, reponse_precedente)
@@ -233,6 +266,11 @@ class Janova:
                 return resultat
 
         # --- Niveau 4 : l'aide extérieure, et l'auto-extension ------------------------------------
+        # Une action sur l'ordinateur : le professeur l'apprend aux mains (une recette de gestes sûrs).
+        if self.createur is not None and aide_permise and self.mains.semble_une_action(etape):
+            resultat = self._par_mains(etape, aide_permise=True)
+            if resultat is not None:
+                return resultat
         if self.createur is not None and aide_permise:
             resultat = self._par_aide_exterieure(etape, etape_reecrite or etape)
             if resultat is not None:
@@ -291,6 +329,79 @@ class Janova:
         self.reflexes.apprendre(cible, reponse, nouvel_organe.nom, mesure["temps"])
         niveau = f"aide extérieure → nouvel organe « {nouvel_organe.nom} »"
         return ResultatEtape(etape, reponse, niveau, mesure["temps"], mesure["memoire"])
+
+    def _par_mains(self, etape: str, aide_permise: bool) -> ResultatEtape | None:
+        """Niveau 2 bis : une action sur l'ordinateur. Faite tout de suite si Janova a ta confiance, sinon proposée."""
+        with self.compteur.mesurer("mains") as mesure:
+            proposition = self.mains.preparer(etape, aide_permise)
+            if proposition is None:
+                return None
+            if self.mains.peut_agir_seule(proposition):
+                reponse = self.mains.executer(proposition, avec_accord=False)
+                attente = False
+            else:
+                self.en_attente.append(proposition)
+                reponse = f"Je propose : {proposition.decrire()}. D'accord ? (oui / non)"
+                attente = True
+        if proposition.origine == "professeur":
+            self.compteur.organes_gpu.add(self.createur.aide.nom)
+            niveau = "aide extérieure → recette pour les mains"
+        else:
+            niveau = f"mains, {proposition.origine}"
+        if attente:
+            niveau += ", attend ton accord"
+        return ResultatEtape(etape, reponse, niveau, mesure["temps"], mesure["memoire"])
+
+    def valider(self, oui: bool) -> str:
+        """Ta réponse (oui / non) à la plus ancienne proposition en attente."""
+        if not self.en_attente:
+            return "Je n'attends aucune réponse de ta part."
+        proposition = self.en_attente.pop(0)
+        if isinstance(proposition, PropositionRoutine):
+            habitude = proposition.habitude
+            if oui:
+                self.yeux.proposee(habitude)
+                routine = self.routines.ajouter(habitude.heure, list(range(7)), habitude.quoi)
+                texte = f"C'est noté : {routine.decrire()}."
+            else:
+                self.yeux.refusee(habitude)
+                texte = "D'accord, je ne te le proposerai plus."
+        elif oui:
+            texte = self.mains.executer(proposition)
+        else:
+            texte = self.mains.refuser(proposition)
+        if self.en_attente:
+            texte += f"\nEnsuite : {self.en_attente[0].decrire()} (oui / non)"
+        return texte
+
+    def creer_routine(self, phrase: str) -> str | None:
+        """« tous les matins, change mon thème » → une routine. None si la phrase n'en décrit pas une."""
+        trouvee = extraire_routine(phrase)
+        if trouvee is None:
+            return None
+        heure, jours, tache = trouvee
+        routine = self.routines.ajouter(heure, jours, tache)
+        return f"C'est noté : {routine.decrire()}. (/routines pour les voir)"
+
+    def vivre(self, maintenant: datetime | None = None) -> list[str]:
+        """Appelée chaque minute par la fenêtre : lancer les routines, regarder, proposer des habitudes."""
+        maintenant = maintenant or datetime.now()
+        messages = []
+        for routine in self.routines.dues(maintenant):
+            messages.append(f"Routine ({routine.decrire()}) :\n{self.traiter(routine.tache).texte()}")
+        self.yeux.regarder()
+        # Au plus une proposition d'habitude par heure, et jamais deux à la fois : Janova ne harcèle pas.
+        deja = any(isinstance(p, PropositionRoutine) for p in self.en_attente)
+        if not deja and maintenant - self._derniere_proposition_d_habitude >= timedelta(hours=1):
+            for habitude in self.yeux.habitudes(maintenant):
+                if not self.routines.existe(habitude.quoi):
+                    proposition = PropositionRoutine(habitude)
+                    self.en_attente.append(proposition)
+                    self._derniere_proposition_d_habitude = maintenant
+                    messages.append(proposition.decrire()[0].upper() + proposition.decrire()[1:] + " (oui / non)")
+                    break
+                self.yeux.proposee(habitude)  # déjà une routine : inutile de la proposer
+        return messages
 
     def _reveiller(self, classe: type[Organe]) -> Organe:
         """Règle 2 : réveille un organe seulement la première fois qu'on en a besoin."""

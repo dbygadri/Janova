@@ -79,6 +79,12 @@ L'architecture complète et la feuille de route sont décrites dans [ARCHITECTUR
 | Décisions rapides (façon Jev) | ✅ Choisir, noter, oui/non, avec un % de confiance, appris par l'exemple |
 | Carnet d'idées | ✅ Rangement automatique, notes Markdown reliées entre elles (graphe façon Obsidian) |
 | Croissance | ✅ Taux d'autonomie et stade de vie : bébé, enfant, adulte (`/croissance`) |
+| Mains (Linux) | ✅ Ranger, déplacer, ouvrir, fond d'écran, thème, corbeille, notifications ; tout s'annule (`/annuler`) |
+| Confiance graduelle | ✅ Janova demande, puis agit seule après 3 accords ; la corbeille demande toujours |
+| Recettes apprises | ✅ Le professeur traduit une demande nouvelle en gestes sûrs, gardés si tu acceptes |
+| Routines | ✅ « tous les matins, change mon thème » |
+| Yeux | ✅ Fermés par défaut ; repèrent tes habitudes et proposent des routines (`/yeux oui`) |
+| Fenêtre sur le bureau | ✅ Zone de texte, boutons oui/non, démarrage avec la session |
 
 ## Organisation des fichiers
 
@@ -90,6 +96,12 @@ Janova/
 │   ├── decision.py      les décisions rapides façon Jev : choisir parmi des options, avec confiance
 │   ├── idees.py         le carnet d'idées : rangement automatique et graphe de notes
 │   ├── croissance.py    le taux d'autonomie et les stades de vie
+│   ├── mains/           agir sur Linux : gestes sûrs (primitives), confiance graduelle, recettes
+│   ├── yeux.py          remarquer tes habitudes (fermés par défaut, tout reste local)
+│   ├── routines.py      les tâches à heure fixe (« tous les matins… »)
+│   ├── conversation.py  tout ce que tu écris, dans le terminal comme dans la fenêtre
+│   ├── fenetre.py       la fenêtre de Janova sur le bureau
+│   ├── installer.py     démarrage automatique avec ta session
 │   ├── noyau/           le cerveau : reçoit une tâche, la découpe, coordonne
 │   │   ├── decoupage.py    découpage d'une tâche en étapes
 │   │   ├── coordination.py les 4 niveaux, du moins cher au plus cher ; réveil des organes ; sommeil
@@ -114,6 +126,29 @@ Janova/
 ├── ARCHITECTURE.md      l'architecture « corps vivant » et la feuille de route
 └── README.md            ce fichier
 ```
+
+## Installer sur Linux (recommandé)
+
+```bash
+sudo apt install git python3 python3-venv python3-tk
+git clone https://github.com/dbygadri/Janova.git
+cd Janova
+python3 -m janova --installer
+python3 -m janova --bureau
+```
+
+La 4e ligne fait démarrer Janova avec ta session et l'ajoute au menu des applications. La 5e ouvre sa fenêtre tout de suite. Ensuite, parle-lui :
+
+```
+toi > range mes téléchargements
+Je propose : ranger un dossier par type de fichier (téléchargements). D'accord ? (oui / non)
+toi > oui
+2 fichier(s) rangé(s) dans Téléchargements : 1 Documents, 1 Images.
+toi > tous les matins, change mon thème
+C'est noté : tous les jours à 08:00 : change mon thème.
+```
+
+Après 3 « oui » pour un même geste, Janova le fait seule. Elle ne supprime jamais rien définitivement (au pire, la corbeille, et elle demande toujours), et `/annuler` défait sa dernière action. Pour qu'elle remarque tes habitudes : `/yeux oui`.
 
 ## Installer et lancer (Windows)
 
