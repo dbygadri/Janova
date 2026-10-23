@@ -51,7 +51,10 @@ function ajusterTerminal() {
   janova.terminal.taille({ cols: term.cols, rows: term.rows });
 }
 new ResizeObserver(ajusterTerminal).observe($('#terminal'));
+// Le terminal n'est lancé qu'à la première ouverture de son onglet, ou par « Relancer ».
+let terminalDemarre = false;
 function demarrerTerminal() {
+  terminalDemarre = true;
   term.reset();
   janova.terminal.demarrer({ cols: term.cols, rows: term.rows });
 }
@@ -82,7 +85,8 @@ async function choisirProjet(id) {
   $('#projet-etat').textContent = '';
   projet = r.ok;
   $('#projet').value = projet.id;
-  demarrerTerminal();
+  terminalDemarre = false;
+  montrerOnglet('journal');
   remplirDepots();
   chargerTaches();
   chargerOnglets();
@@ -551,7 +555,7 @@ janova.taches.surChangement(verifierMaj);
 
 // --- Onglets du centre : terminal, journal, notes, et les outils web du projet ---
 // Une fenêtre web n'est chargée qu'au moment où on l'ouvre (peu d'énergie), et fermée au changement de projet.
-let ongletActif = 'terminal';
+let ongletActif = 'journal';
 let outilsWeb = [];
 const vuesWeb = new Map();
 
@@ -572,7 +576,7 @@ function montrerOnglet(id) {
     vuesWeb.set(id, w);
   }
   for (const [cle, w] of vuesWeb) w.hidden = cle !== id;
-  if (id === 'terminal') setTimeout(ajusterTerminal, 0);
+  if (id === 'terminal') setTimeout(() => { ajusterTerminal(); if (!terminalDemarre) demarrerTerminal(); }, 0);
   if (id === 'journal') rafraichirJournal();
 }
 
@@ -589,7 +593,7 @@ async function chargerOnglets() {
     zone.append(b);
   }
   document.querySelectorAll('#onglets .onglet').forEach((b) => { b.onclick = () => montrerOnglet(b.dataset.onglet); });
-  if (!['terminal', 'journal', 'notes'].includes(ongletActif)) montrerOnglet('terminal');
+  if (!['terminal', 'journal', 'notes'].includes(ongletActif)) montrerOnglet('journal');
 }
 $('#web-retour').onclick = () => { const w = vuesWeb.get(ongletActif); if (w && w.canGoBack()) w.goBack(); };
 $('#web-recharger').onclick = () => { const w = vuesWeb.get(ongletActif); if (w) w.reload(); };

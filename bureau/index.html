@@ -48,21 +48,21 @@
     <section id="zone-terminal" class="panneau" style="flex: 1">
       <div class="titre-panneau onglets-centre">
         <nav id="onglets">
-          <button data-onglet="terminal" class="onglet actif">Terminal</button>
-          <button data-onglet="journal" class="onglet">Journal</button>
+          <button data-onglet="journal" class="onglet actif">Journal</button>
           <button data-onglet="notes" class="onglet">Notes</button>
+          <button data-onglet="terminal" class="onglet">Terminal</button>
           <span id="onglets-web"></span>
         </nav>
         <span id="outils-onglet">
-          <button id="terminal-relancer" class="petit">Relancer</button>
+          <button id="terminal-relancer" class="petit" hidden>Relancer</button>
           <span id="outils-web" hidden>
             <button id="web-retour" class="petit" title="Page précédente">←</button>
             <button id="web-recharger" class="petit" title="Recharger">⟳</button>
           </span>
         </span>
       </div>
-      <div id="vue-terminal" class="vue"><div id="terminal"></div></div>
-      <div id="vue-journal" class="vue" hidden>
+      <div id="vue-terminal" class="vue" hidden><div id="terminal"></div></div>
+      <div id="vue-journal" class="vue">
         <h4>En ce moment</h4>
         <div id="journal-direct" class="etat">Rien ne tourne en ce moment.</div>
         <h4>Toutes les tâches</h4>
