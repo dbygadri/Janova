@@ -740,6 +740,27 @@ function afficherDecouverte(d) {
   return li;
 }
 
+// Une fiche de connaissances : le sujet en titre, et en dépliant ce qui est appris et les sources.
+function afficherFiche(f) {
+  const li = el('li');
+  const details = el('details');
+  const resume = el('summary');
+  const n = f.explorations || 0;
+  resume.append(el('span', 't', f.nom), el('span', 'quand', `${n} exploration${n > 1 ? 's' : ''}, la dernière ${dateCourte(f.derniere)}`));
+  details.append(resume);
+  const ul = el('ul', 'appris');
+  for (const l of f.appris || []) ul.append(el('li', '', l));
+  const sources = el('div', 'sources');
+  for (const s of (f.sources || []).filter((s) => /^https:\/\//.test(s.adresse || ''))) {
+    sources.append(lienWeb(s.adresse, `${s.source} : ${s.titre}`));
+  }
+  details.append(ul, sources);
+  li.append(details);
+  return li;
+}
+
+const afficherSituation = (s) => { $('#curiosite-situation').textContent = s ? s.texte : ''; };
+
 async function rafraichirRecherche() {
   const etat = await janova.curiosite.etat();
   const active = etat.reglages.active;
@@ -747,11 +768,16 @@ async function rafraichirRecherche() {
   bouton.textContent = active ? 'Curiosité : en marche' : 'Curiosité : en pause';
   bouton.classList.toggle('actif', active);
   $('#curiosite-explication').textContent = active
-    ? `Je cherche quand l'ordinateur est inactif depuis ${etat.reglages.inactiviteMin} min, au plus une fois toutes les ${etat.reglages.intervalleMin} min, jamais pendant une tâche.`
+    ? `Je cherche quand l'ordinateur est inactif depuis ${etat.reglages.inactiviteMin} min, jamais pendant une tâche : une recherche après l'autre, au plus ${etat.reglages.maxParHeure} par heure (sur batterie, une toutes les ${etat.reglages.intervalleMin} min).`
     : 'En pause : je ne lis rien sur internet tout seul.';
   rechercheDirecte = etat.enCours ? etat.enCours.evenements : rechercheDirecte && rechercheDirecte.some((e) => e.etape === 'resultat' || e.etape === 'rien') ? rechercheDirecte : null;
   $('#curiosite-chercher').disabled = !!etat.enCours;
+  afficherSituation(etat.situation);
   afficherDirect();
+  const ulF = $('#recherche-fiches');
+  ulF.innerHTML = '';
+  for (const f of etat.connaissances || []) ulF.append(afficherFiche(f));
+  if (!(etat.connaissances || []).length) ulF.append(el('li', 'etat', 'Aucune fiche pour l\'instant.'));
   const ulS = $('#recherche-sujets');
   ulS.innerHTML = '';
   for (const s of etat.sujets.slice(0, 12)) {
@@ -799,6 +825,7 @@ $('#sujet-form').onsubmit = async (e) => {
   rafraichirRecherche();
 };
 janova.curiosite.surEvenement((e) => {
+  if (e.etape === 'situation') { if (ongletActif === 'recherche') afficherSituation(e); return; }
   if (e.etape === 'debut') rechercheDirecte = [];
   else if (e.etape !== 'fin' && rechercheDirecte) rechercheDirecte.push(e);
   document.querySelector('[data-onglet=recherche]').classList.toggle('tourne', e.etape !== 'fin');

@@ -289,10 +289,12 @@ app.whenReady().then(() => {
   memoire.lisezMoi();
   for (const p of projets.liste()) memoire.noteProjet(p);
   creerFenetre();
-  // Curiosité : une recherche gratuite (sans Claude) quand l'ordinateur est inactif. Jamais pendant l'autotest.
+  // Curiosité : des recherches gratuites (sans Claude) quand l'ordinateur est inactif, enchaînées tant que
+  // l'utilisateur ne revient pas ; sur batterie, le rythme lent. Jamais pendant l'autotest.
   if (!process.argv.includes('--autotest')) {
     surveillanceCuriosite = curiosite.surveiller({
       inactiviteS: () => powerMonitor.getSystemIdleTime(),
+      surBatterie: () => powerMonitor.isOnBatteryPower(),
       tacheEnCours: () => !!journal.historique().enCours,
       surEvenement: (e) => envoyer('curiosite:evenement', e),
     });
@@ -340,7 +342,9 @@ ipcMain.handle('deploiement:enregistrer', erreurs((d) => {
 ipcMain.handle('curiosite:etat', async () => ({
   reglages: curiosite.reglages(),
   enCours: surveillanceCuriosite && surveillanceCuriosite.etat.enCours,
+  situation: surveillanceCuriosite ? surveillanceCuriosite.decrire() : null,
   decouvertes: curiosite.decouvertes(30),
+  connaissances: curiosite.connaissances(),
   sujets: await curiosite.sujets().catch(() => []),
 }));
 ipcMain.handle('curiosite:activer', (_e, oui) => { curiosite.activer(oui); return curiosite.reglages(); });

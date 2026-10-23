@@ -285,6 +285,67 @@ test('curiosité : en marche au départ, et seulement quand l\'ordinateur est in
   curiosite.activer(false);
 });
 
+test('curiosité en continu : pause courte, plafond par heure, repos après « rien », batterie, retour de l\'utilisateur', () => {
+  const curiosite = require('../lib/curiosite');
+  const memoire = require('../lib/memoire');
+  const r = { ...curiosite.reglages(), active: true };
+  assert.ok(r.pauseEntreS === 60 && r.maxParHeure === 20 && r.reposMin === 30); // les valeurs par défaut
+  const T = 1e12;
+  const min = 60 * 1000;
+  // Une recherche lancée il y a 3 min, finie il y a 30 s, l'utilisateur n'est pas revenu.
+  const base = {
+    reglages: r, inactifS: 20 * 60, tacheEnCours: false, enCours: false, maintenant: T, derniere: T - 3 * min,
+    enchainer: true, surBatterie: false, lancements: [T - 3 * min], dernier: { etape: 'resultat', fin: T - 30 * 1000 },
+  };
+  // Enchaînement : on attend la pause d'une minute, puis on repart sans attendre les 10 minutes.
+  assert.strictEqual(curiosite.situation(base).code, 'pause');
+  assert.strictEqual(curiosite.situation(base).texte, 'Je fais une pause d’une minute.');
+  assert.ok(!curiosite.peutLancer(base));
+  const apres = { ...base, dernier: { etape: 'resultat', fin: T - 61 * 1000 } };
+  assert.ok(curiosite.peutLancer(apres));
+  // Les conditions restent obligatoires à chaque fois.
+  assert.ok(!curiosite.peutLancer({ ...apres, tacheEnCours: true }));
+  assert.ok(!curiosite.peutLancer({ ...apres, enCours: true }));
+  assert.ok(!curiosite.peutLancer({ ...apres, reglages: { ...r, active: false } }));
+  // L'utilisateur revient : on ne relance plus…
+  assert.strictEqual(curiosite.situation({ ...apres, inactifS: 30 }).code, 'utilisateur');
+  assert.strictEqual(curiosite.situation({ ...apres, inactifS: 30 }).texte, 'En pause : tu utilises l\'ordinateur.');
+  // … et quand il repart, plus d'enchaînement : on reprend l'ancien rythme (10 minutes depuis la dernière).
+  assert.ok(!curiosite.peutLancer({ ...apres, enchainer: false }));
+  assert.ok(curiosite.peutLancer({ ...apres, enchainer: false, derniere: T - 10 * min }));
+  // Plafond : 20 recherches sur une heure glissante.
+  const vingt = Array.from({ length: 20 }, (_, i) => T - (59 - i) * min);
+  assert.strictEqual(curiosite.situation({ ...apres, lancements: vingt }).code, 'plafond');
+  assert.ok(curiosite.peutLancer({ ...apres, lancements: [T - 61 * min, ...vingt.slice(1)] })); // la plus vieille a plus d'une heure
+  // Après « rien » : repos de 30 minutes.
+  const rien = { ...base, dernier: { etape: 'rien', fin: T - 29 * min }, derniere: T - 30 * min };
+  assert.strictEqual(curiosite.situation(rien).code, 'repos');
+  assert.strictEqual(curiosite.situation(rien).texte, 'Je me repose 30 minutes : plus rien de nouveau à lire.');
+  assert.ok(curiosite.peutLancer({ ...rien, dernier: { etape: 'rien', fin: T - 30 * min } }));
+  // Sur batterie : l'ancien rythme, une toutes les 10 minutes, sans enchaîner.
+  const batterie = { ...apres, surBatterie: true };
+  assert.strictEqual(curiosite.situation(batterie).code, 'batterie');
+  assert.strictEqual(curiosite.situation(batterie).texte, 'Sur batterie : rythme lent, une recherche toutes les 10 minutes.');
+  assert.ok(curiosite.peutLancer({ ...batterie, derniere: T - 10 * min }));
+  // Les réglages se changent dans la mémoire unique.
+  memoire.changerReglages({ curiosite_pause_entre_s: 30, curiosite_max_par_heure: 5, curiosite_repos_min: 45 });
+  const r2 = { ...curiosite.reglages(), active: true };
+  assert.ok(r2.pauseEntreS === 30 && r2.maxParHeure === 5 && r2.reposMin === 45);
+  assert.strictEqual(curiosite.situation({ ...base, reglages: r2, dernier: { etape: 'resultat', fin: T - 10 * 1000 } }).texte, 'Je fais une pause de 30 secondes.');
+  memoire.changerReglages({ curiosite_pause_entre_s: null, curiosite_max_par_heure: null, curiosite_repos_min: null });
+});
+
+test('curiosité : fiches de connaissances lues dans la mémoire unique', () => {
+  const curiosite = require('../lib/curiosite');
+  const memoire = require('../lib/memoire');
+  assert.deepStrictEqual(curiosite.connaissances(), []);
+  memoire.ecrireJson(memoire.chemin('noyau', 'curiosite', 'connaissances.json'), {
+    a: { nom: 'A', cle: 'a', appris: ['x'], sources: [], explorations: 1, derniere: '2026-10-23T10:00:00+02:00' },
+    b: { nom: 'B', cle: 'b', appris: ['y'], sources: [], explorations: 2, derniere: '2026-10-24T10:00:00+02:00' },
+  });
+  assert.deepStrictEqual(curiosite.connaissances().map((f) => f.nom), ['B', 'A']); // la plus récente en haut
+});
+
 test('curiosité : sujets, suggestion, écart et découvertes (sans réseau)', async () => {
   const curiosite = require('../lib/curiosite');
   const memoire = require('../lib/memoire');

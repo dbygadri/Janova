@@ -1,36 +1,72 @@
-// Curiosité : quand l'ordinateur est inactif, le bureau demande au noyau UNE recherche sur internet,
+// Curiosité : quand l'ordinateur est inactif, le bureau demande au noyau une recherche sur internet,
 // gratuite et sans Claude (python3 -m janova.curiosite), et suit son avancement ligne par ligne.
-// Conditions : curiosité en marche, ordinateur inactif depuis assez longtemps, aucune tâche Claude Code
-// en cours, et pas plus d'une recherche par intervalle. Les réglages sont dans la mémoire unique.
+// Conditions, vérifiées avant chaque recherche : curiosité en marche, ordinateur inactif depuis assez
+// longtemps, aucune tâche Claude Code en cours. Tant que l'utilisateur ne revient pas, une recherche
+// terminée est suivie d'une autre après une courte pause (au plus maxParHeure sur une heure glissante) ;
+// après une recherche « rien » (plus rien à lire), on se repose ; sur batterie, on garde le rythme lent
+// (une recherche toutes les intervalleMin minutes). Les réglages sont dans la mémoire unique.
 const { spawn, execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const memoire = require('./memoire');
 const { RACINE_NOYAU } = require('./reflexes');
 
-const DEFAUTS = { active: true, inactiviteMin: 10, intervalleMin: 10 };
+const DEFAUTS = { active: true, inactiviteMin: 10, intervalleMin: 10, pauseEntreS: 60, maxParHeure: 20, reposMin: 30 };
 const DUREE_MAX = 5 * 60 * 1000; // une recherche qui dépasse 5 minutes est arrêtée
+const HEURE = 60 * 60 * 1000;
 
 const dossier = () => memoire.chemin('noyau', 'curiosite');
 
 // En marche par défaut ; l'utilisateur peut la mettre en pause (curiosite_active: false), et ce choix est gardé.
 function reglages() {
   const r = memoire.reglages();
-  const minutes = (v, d) => (Number.isFinite(Number(v)) && Number(v) >= 1 ? Number(v) : d);
+  const nombre = (v, d) => (Number.isFinite(Number(v)) && Number(v) >= 1 ? Number(v) : d);
   return {
     active: r.curiosite_active !== false,
-    inactiviteMin: minutes(r.curiosite_inactivite_min, DEFAUTS.inactiviteMin),
-    intervalleMin: minutes(r.curiosite_intervalle_min, DEFAUTS.intervalleMin),
+    inactiviteMin: nombre(r.curiosite_inactivite_min, DEFAUTS.inactiviteMin),
+    intervalleMin: nombre(r.curiosite_intervalle_min, DEFAUTS.intervalleMin),
+    pauseEntreS: nombre(r.curiosite_pause_entre_s, DEFAUTS.pauseEntreS),
+    maxParHeure: nombre(r.curiosite_max_par_heure, DEFAUTS.maxParHeure),
+    reposMin: nombre(r.curiosite_repos_min, DEFAUTS.reposMin),
   };
 }
 const activer = (oui) => memoire.changerReglages({ curiosite_active: !!oui });
 
-// Peut-on lancer une recherche maintenant ? (tout est fourni en paramètre : facile à tester)
-function peutLancer({ reglages: r, inactifS, tacheEnCours, enCours, derniere, maintenant }) {
-  if (!r.active || enCours || tacheEnCours) return false;
-  if (inactifS < r.inactiviteMin * 60) return false;
-  return !derniere || maintenant - derniere >= r.intervalleMin * 60 * 1000;
+// « d'une minute », « de 30 secondes », « de 2 minutes »
+const dUneDuree = (s) => (s === 60 ? 'd’une minute' : s % 60 ? `de ${s} secondes` : `de ${s / 60} minutes`);
+
+// Où en est la curiosité, et pourquoi ? (tout est fourni en paramètre : facile à tester)
+// enchainer : l'utilisateur n'est pas revenu depuis la fin de la dernière recherche ;
+// lancements : les instants des recherches lancées ; dernier : { etape: 'resultat' | 'rien', fin } de la dernière.
+// Rend { code, texte } ; code 'pret' veut dire qu'on peut lancer une recherche maintenant.
+function situation({ reglages: r, inactifS, tacheEnCours, enCours, derniere, maintenant,
+  enchainer = false, surBatterie = false, lancements = [], dernier = null }) {
+  r = { ...DEFAUTS, ...r };
+  const dire = (code, texte) => ({ code, texte });
+  if (enCours) return dire('cherche', 'Je cherche.');
+  if (!r.active) return dire('arretee', 'En pause : je ne lis rien sur internet toute seule.');
+  if (tacheEnCours) return dire('tache', 'En attente : Claude Code travaille.');
+  if (inactifS < r.inactiviteMin * 60) return dire('utilisateur', 'En pause : tu utilises l\'ordinateur.');
+  if (lancements.filter((t) => maintenant - t < HEURE).length >= r.maxParHeure) {
+    return dire('plafond', `Je me repose : déjà ${r.maxParHeure} recherches en une heure.`);
+  }
+  if (dernier && dernier.etape === 'rien' && maintenant - dernier.fin < r.reposMin * 60 * 1000) {
+    return dire('repos', `Je me repose ${r.reposMin} minutes : plus rien de nouveau à lire.`);
+  }
+  if (surBatterie || !enchainer || !dernier) {
+    if (derniere && maintenant - derniere < r.intervalleMin * 60 * 1000) {
+      return surBatterie
+        ? dire('batterie', `Sur batterie : rythme lent, une recherche toutes les ${r.intervalleMin} minutes.`)
+        : dire('attente', `J'attends : une recherche toutes les ${r.intervalleMin} minutes au plus.`);
+    }
+    return dire('pret', 'Je vais chercher.');
+  }
+  if (maintenant - dernier.fin < r.pauseEntreS * 1000) return dire('pause', `Je fais une pause ${dUneDuree(r.pauseEntreS)}.`);
+  return dire('pret', 'Je vais chercher.');
 }
+
+// Peut-on lancer une recherche maintenant ?
+const peutLancer = (p) => situation(p).code === 'pret';
 
 function noyau(args, delai = 15000) {
   const racine = RACINE_NOYAU();
@@ -99,27 +135,65 @@ function lancer(surEvenement = () => {}) {
   });
 }
 
-// Surveille l'inactivité chaque minute et lance une recherche quand tout est réuni.
+// Les fiches de connaissances (une par sujet), les plus récemment enrichies en haut.
+function connaissances() {
+  const fiches = memoire.lireJson(path.join(dossier(), 'connaissances.json'), {});
+  return Object.values(fiches && typeof fiches === 'object' ? fiches : {})
+    .filter((f) => f && typeof f === 'object')
+    .sort((a, b) => String(b.derniere || '').localeCompare(String(a.derniere || '')));
+}
+
+// Surveille l'inactivité chaque minute et lance une recherche quand tout est réuni ; à la fin d'une
+// recherche, la suivante est programmée après la pause (ou le repos), si l'utilisateur n'est pas revenu.
 // inactiviteS() : secondes depuis la dernière action de l'utilisateur (powerMonitor.getSystemIdleTime).
-function surveiller({ inactiviteS, tacheEnCours, surEvenement = () => {}, intervalle = 60 * 1000 }) {
-  const etat = { enCours: null, derniere: 0 };
+// surBatterie() : vrai si l'ordinateur est sur batterie (powerMonitor.isOnBatteryPower).
+function surveiller({ inactiviteS, tacheEnCours, surBatterie = () => false, surEvenement = () => {}, intervalle = 60 * 1000 }) {
+  const etat = { enCours: null, derniere: 0, lancements: [], dernier: null, enchainer: false, situation: null };
+  let suivante = null;
+  const parametres = () => {
+    const r = reglages();
+    const inactifS = inactiviteS();
+    if (inactifS < r.inactiviteMin * 60) etat.enchainer = false; // l'utilisateur est revenu : on ne relance plus
+    const maintenant = Date.now();
+    etat.lancements = etat.lancements.filter((t) => maintenant - t < HEURE);
+    return {
+      reglages: r, inactifS, tacheEnCours: tacheEnCours(), enCours: !!etat.enCours, derniere: etat.derniere, maintenant,
+      enchainer: etat.enchainer, surBatterie: !!surBatterie(), lancements: etat.lancements, dernier: etat.dernier,
+    };
+  };
+  const decrire = () => {
+    const s = situation(parametres());
+    if (!etat.situation || etat.situation.code !== s.code || etat.situation.texte !== s.texte) {
+      etat.situation = s;
+      surEvenement({ etape: 'situation', ...s });
+    }
+    return s;
+  };
+  const programmer = () => {
+    clearTimeout(suivante);
+    const r = reglages();
+    const attente = etat.dernier && etat.dernier.etape === 'rien' ? r.reposMin * 60 : r.pauseEntreS;
+    suivante = setTimeout(() => essayer().catch(() => {}), attente * 1000 + 500);
+  };
   const essayer = async (forcer = false) => {
     if (etat.enCours) return false;
-    const ok = forcer || peutLancer({
-      reglages: reglages(), inactifS: inactiviteS(), tacheEnCours: tacheEnCours(), enCours: false,
-      derniere: etat.derniere, maintenant: Date.now(),
-    });
-    if (!ok) return false;
+    if (!forcer && decrire().code !== 'pret') return false;
     etat.derniere = Date.now();
+    etat.lancements.push(etat.derniere);
     etat.enCours = { debut: new Date().toISOString(), evenements: [] };
+    decrire();
     surEvenement({ etape: 'debut' });
-    await lancer((e) => { etat.enCours.evenements.push(e); surEvenement(e); });
+    const fin = await lancer((e) => { etat.enCours.evenements.push(e); surEvenement(e); });
     etat.enCours = null;
+    etat.dernier = { etape: fin && fin.etape === 'resultat' ? 'resultat' : 'rien', fin: Date.now() };
+    etat.enchainer = inactiviteS() >= reglages().inactiviteMin * 60; // la recherche en cours a pu finir, pas plus
     surEvenement({ etape: 'fin' });
+    decrire();
+    if (etat.enchainer) programmer();
     return true;
   };
   const minuteur = setInterval(() => essayer().catch(() => {}), intervalle);
-  return { etat, essayer, arreter: () => clearInterval(minuteur) };
+  return { etat, essayer, decrire, arreter: () => { clearInterval(minuteur); clearTimeout(suivante); } };
 }
 
-module.exports = { DEFAUTS, reglages, activer, peutLancer, sujets, ecarter, suggerer, decouvertes, decouvertesEntre, lancer, surveiller };
+module.exports = { DEFAUTS, reglages, activer, situation, peutLancer, connaissances, sujets, ecarter, suggerer, decouvertes, decouvertesEntre, lancer, surveiller };
