@@ -261,12 +261,16 @@ test('idées : lignes « IDÉE : » lues, filtrées et ajoutées non cochées', 
   assert.ok(idees.CONSIGNE.startsWith('IDÉE :') && /mise en ligne/.test(idees.CONSIGNE));
 });
 
-test('curiosité : en pause au départ, et seulement quand l\'ordinateur est inactif sans tâche en cours', () => {
+test('curiosité : en marche au départ, et seulement quand l\'ordinateur est inactif sans tâche en cours', () => {
   const curiosite = require('../lib/curiosite');
   const memoire = require('../lib/memoire');
   assert.deepStrictEqual(curiosite.reglages(), curiosite.DEFAUTS);
+  assert.strictEqual(curiosite.reglages().active, true); // sans réglage, elle est en marche
+  curiosite.activer(false);
   assert.strictEqual(curiosite.reglages().active, false);
+  assert.strictEqual(memoire.reglages().curiosite_active, false); // le choix de pause est gardé
   curiosite.activer(true);
+  assert.strictEqual(curiosite.reglages().active, true);
   memoire.changerReglages({ curiosite_inactivite_min: 15 });
   const r = curiosite.reglages();
   assert.ok(r.active && r.inactiviteMin === 15 && r.intervalleMin === 10);

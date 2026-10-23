@@ -8,17 +8,17 @@ const path = require('path');
 const memoire = require('./memoire');
 const { RACINE_NOYAU } = require('./reflexes');
 
-const DEFAUTS = { active: false, inactiviteMin: 10, intervalleMin: 10 };
+const DEFAUTS = { active: true, inactiviteMin: 10, intervalleMin: 10 };
 const DUREE_MAX = 5 * 60 * 1000; // une recherche qui dépasse 5 minutes est arrêtée
 
 const dossier = () => memoire.chemin('noyau', 'curiosite');
 
-// En pause à la première installation : rien ne part sur internet sans que l'utilisateur l'ait voulu.
+// En marche par défaut ; l'utilisateur peut la mettre en pause (curiosite_active: false), et ce choix est gardé.
 function reglages() {
   const r = memoire.reglages();
   const minutes = (v, d) => (Number.isFinite(Number(v)) && Number(v) >= 1 ? Number(v) : d);
   return {
-    active: r.curiosite_active === true,
+    active: r.curiosite_active !== false,
     inactiviteMin: minutes(r.curiosite_inactivite_min, DEFAUTS.inactiviteMin),
     intervalleMin: minutes(r.curiosite_intervalle_min, DEFAUTS.intervalleMin),
   };
