@@ -167,3 +167,30 @@ webview[hidden] { display: none; }
 #onglets { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; }
 #onglets .onglet { padding: 3px 7px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
 .onglets-centre { min-width: 0; }
+
+/* Recherche : la curiosité de Janova */
+#vue-recherche { overflow-y: auto; padding: 4px 14px 14px; }
+#vue-recherche h4 { margin: 12px 0 6px; color: var(--discret); font-size: 12.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.recherche-tete { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.recherche-tete .aide { margin: 0; }
+#curiosite-interrupteur { padding: 4px 10px; }
+#curiosite-interrupteur.actif { border-color: var(--vert); color: var(--vert); }
+#recherche-direct .tete { font-weight: 600; font-style: normal; color: var(--texte); }
+#recherche-direct ol { margin: 6px 0 0; padding-left: 18px; font-style: normal; }
+#recherche-direct li.erreur { color: var(--orange); }
+#recherche-direct li.fin { color: var(--vert); }
+.pourquoi { color: var(--discret); font-size: 12.5px; }
+#sujet-form { display: flex; gap: 6px; }
+#sujet-form input { flex: 1; padding: 4px 8px; }
+#recherche-sujets, #recherche-decouvertes { list-style: none; margin: 0; padding: 0; }
+#recherche-sujets > li, #recherche-decouvertes > li { padding: 7px 10px; border: 1px solid var(--bord); border-radius: 8px; margin-bottom: 5px; background: var(--fond); }
+#vue-recherche .l1 { display: flex; gap: 8px; align-items: center; }
+#vue-recherche .l1 .t { flex: 1; font-weight: 600; }
+#vue-recherche .quand { color: var(--discret); font-size: 12px; }
+.interet { width: 60px; height: 6px; border-radius: 3px; background: var(--bord); overflow: hidden; }
+.interet span { display: block; height: 100%; background: var(--accent); }
+#recherche-decouvertes .appris { margin: 6px 0; padding-left: 18px; font-size: 13px; }
+#recherche-decouvertes .sources { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+a.lien-web { color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.lien-web:hover { text-decoration: underline; }
+#recherche-decouvertes .couche { font-size: 11.5px; color: var(--vert); margin-top: 4px; }

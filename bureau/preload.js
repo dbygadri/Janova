@@ -43,7 +43,15 @@ contextBridge.exposeInMainWorld('janova', {
   },
   notes: { lire: appel('notes:lire'), ecrire: appel('notes:ecrire') },
   journal: { historique: appel('journal:historique'), lire: appel('journal:lire') },
-  liens: { lire: appel('liens:lire') },
+  liens: { lire: appel('liens:lire'), ouvrir: appel('liens:ouvrir') },
+  curiosite: {
+    etat: appel('curiosite:etat'),
+    activer: appel('curiosite:activer'),
+    ecarter: appel('curiosite:ecarter'),
+    suggerer: appel('curiosite:suggerer'),
+    chercher: appel('curiosite:chercher'),
+    surEvenement: ecouter('curiosite:evenement'),
+  },
   deploiement: {
     destinations: appel('deploiement:destinations'),
     resume: appel('deploiement:resume'),

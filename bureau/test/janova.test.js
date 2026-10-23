@@ -260,3 +260,48 @@ test('idées : lignes « IDÉE : » lues, filtrées et ajoutées non cochées', 
   assert.strictEqual(taches.lire(p).filter((t) => t.proposee).length, idees.MAX_EN_ATTENTE);
   assert.ok(idees.CONSIGNE.startsWith('IDÉE :') && /mise en ligne/.test(idees.CONSIGNE));
 });
+
+test('curiosité : en pause au départ, et seulement quand l\'ordinateur est inactif sans tâche en cours', () => {
+  const curiosite = require('../lib/curiosite');
+  const memoire = require('../lib/memoire');
+  assert.deepStrictEqual(curiosite.reglages(), curiosite.DEFAUTS);
+  assert.strictEqual(curiosite.reglages().active, false);
+  curiosite.activer(true);
+  memoire.changerReglages({ curiosite_inactivite_min: 15 });
+  const r = curiosite.reglages();
+  assert.ok(r.active && r.inactiviteMin === 15 && r.intervalleMin === 10);
+  const base = { reglages: r, inactifS: 20 * 60, tacheEnCours: false, enCours: false, derniere: 0, maintenant: 1e12 };
+  assert.ok(curiosite.peutLancer(base));
+  assert.ok(!curiosite.peutLancer({ ...base, inactifS: 14 * 60 })); // l'utilisateur est là
+  assert.ok(!curiosite.peutLancer({ ...base, tacheEnCours: true })); // Claude Code travaille
+  assert.ok(!curiosite.peutLancer({ ...base, enCours: true }));
+  assert.ok(!curiosite.peutLancer({ ...base, derniere: 1e12 - 9 * 60 * 1000 })); // une toutes les 10 minutes
+  assert.ok(curiosite.peutLancer({ ...base, derniere: 1e12 - 10 * 60 * 1000 }));
+  assert.ok(!curiosite.peutLancer({ ...base, reglages: { ...r, active: false } }));
+  curiosite.activer(false);
+});
+
+test('curiosité : sujets, suggestion, écart et découvertes (sans réseau)', async () => {
+  const curiosite = require('../lib/curiosite');
+  const memoire = require('../lib/memoire');
+  const sujets = await curiosite.sujets();
+  assert.ok(sujets.some((s) => s.origine === 'cap'));
+  assert.strictEqual((await curiosite.suggerer('robots jardiniers')).ok, true);
+  assert.strictEqual((await curiosite.suggerer('dby.perso@gmail.com')).ok, false); // rien de personnel ne part
+  assert.strictEqual((await curiosite.sujets())[0].nom, 'robots jardiniers');
+  await curiosite.ecarter('robots jardiniers');
+  assert.ok(!(await curiosite.sujets()).some((s) => s.nom === 'robots jardiniers'));
+
+  const d = (date, sujet) => JSON.stringify({ date, sujet, pourquoi: 'parce que', appris: ['Une chose apprise.'], sources: [{ adresse: 'https://fr.wikipedia.org/wiki/X', titre: 'X', source: 'Wikipédia (fr)' }] });
+  memoire.ecrire(memoire.chemin('noyau', 'curiosite', '2026-10-25.jsonl'), d(new Date('2026-10-25T02:00:00').toISOString(), 'B') + '\n' + d(new Date('2026-10-25T12:00:00').toISOString(), 'C') + '\n');
+  memoire.ecrire(memoire.chemin('noyau', 'curiosite', '2026-10-24.jsonl'), d(new Date('2026-10-24T23:30:00').toISOString(), 'A') + '\n');
+  assert.deepStrictEqual(curiosite.decouvertes().map((x) => x.sujet), ['C', 'B', 'A']); // les plus récentes en haut
+
+  const nuit = require('../lib/nuit');
+  assert.deepStrictEqual(nuit.decouvertesDeLaNuit('2026-10-24').map((x) => x.sujet), ['A', 'B']);
+  const texte = nuit.rediger('2026-10-24', [], [], nuit.decouvertesDeLaNuit('2026-10-24'));
+  for (const morceau of ['Ce que j\'ai découvert', '### A', 'Pourquoi : parce que', '- Une chose apprise.', 'https://fr.wikipedia.org/wiki/X']) {
+    assert.ok(texte.includes(morceau), morceau);
+  }
+  assert.ok(!nuit.rediger('2026-10-24', []).includes('découvert'));
+});

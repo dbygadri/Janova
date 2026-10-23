@@ -49,4 +49,4 @@ function retenir(question, reponse, delai = 8000) {
   });
 }
 
-module.exports = { peutRetenir, retenir, QUESTION_MAX, REPONSE_MAX };
+module.exports = { peutRetenir, retenir, RACINE_NOYAU, QUESTION_MAX, REPONSE_MAX };

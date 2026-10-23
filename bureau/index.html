@@ -50,6 +50,7 @@
         <nav id="onglets">
           <button data-onglet="journal" class="onglet actif">Journal</button>
           <button data-onglet="notes" class="onglet">Notes</button>
+          <button data-onglet="recherche" class="onglet">Recherche</button>
           <button data-onglet="terminal" class="onglet">Terminal</button>
           <span id="onglets-web"></span>
         </nav>
@@ -76,6 +77,24 @@
         <label>Mémoire du projet <span class="aide">(relue par Claude au début de chaque tâche ; tu peux la corriger)</span>
           <textarea id="notes-contexte"></textarea>
         </label>
+      </div>
+      <div id="vue-recherche" class="vue" hidden>
+        <div class="recherche-tete">
+          <button id="curiosite-interrupteur" class="secondaire" title="Quand l'ordinateur est inactif, Janova lit sur internet par curiosité, gratuitement, sans Claude">Curiosité : en pause</button>
+          <button id="curiosite-chercher" class="petit">Chercher maintenant</button>
+          <span id="curiosite-explication" class="aide"></span>
+        </div>
+        <h4>En ce moment</h4>
+        <div id="recherche-direct" class="etat">Aucune recherche en cours.</div>
+        <h4>Ce qui m'intrigue en ce moment</h4>
+        <form id="sujet-form">
+          <input id="sujet-saisie" placeholder="Suggère-moi un sujet…" autocomplete="off" maxlength="80">
+          <button type="submit" class="petit">Suggérer</button>
+        </form>
+        <p id="sujet-erreur" class="texte-erreur"></p>
+        <ul id="recherche-sujets"></ul>
+        <h4>Découvertes</h4>
+        <ul id="recherche-decouvertes"></ul>
       </div>
       <div id="vues-web"></div>
     </section>

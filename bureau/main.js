@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session } = require('electron');
+const { app, BrowserWindow, ipcMain, session, powerMonitor, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -12,6 +12,7 @@ const journal = require('./lib/journal');
 const deploiement = require('./lib/deploiement');
 const voix = require('./lib/voix');
 const reflexes = require('./lib/reflexes');
+const curiosite = require('./lib/curiosite');
 const { liens } = require('./lib/liens');
 const { sujetTelephone } = require('./lib/notifier');
 const cerveau = require('./cerveau');
@@ -70,6 +71,7 @@ let terminal = null;
 let chat = null;
 let projet = null;
 let discussion = null;
+let surveillanceCuriosite = null; // la curiosité (recherches quand l'ordinateur est inactif)
 
 function creerFenetre() {
   fenetre = new BrowserWindow({
@@ -90,6 +92,9 @@ function creerFenetre() {
     if (!/^https:\/\//.test(params.src || '')) _e.preventDefault();
   });
   fenetre.loadFile('index.html');
+  // La fenêtre de Janova ne quitte jamais sa page : un lien s'ouvre dans le navigateur, pas ici.
+  fenetre.webContents.on('will-navigate', (e) => e.preventDefault());
+  fenetre.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   fenetre.on('closed', () => {
     fenetre = null;
     if (terminal) terminal.kill();
@@ -284,6 +289,14 @@ app.whenReady().then(() => {
   memoire.lisezMoi();
   for (const p of projets.liste()) memoire.noteProjet(p);
   creerFenetre();
+  // Curiosité : une recherche gratuite (sans Claude) quand l'ordinateur est inactif. Jamais pendant l'autotest.
+  if (!process.argv.includes('--autotest')) {
+    surveillanceCuriosite = curiosite.surveiller({
+      inactiviteS: () => powerMonitor.getSystemIdleTime(),
+      tacheEnCours: () => !!journal.historique().enCours,
+      surEvenement: (e) => envoyer('curiosite:evenement', e),
+    });
+  }
 });
 app.on('window-all-closed', () => app.quit());
 
@@ -322,6 +335,28 @@ ipcMain.handle('deploiement:enregistrer', erreurs((d) => {
   memoire.ecrireJson(f, c);
   return true;
 }));
+
+// --- Curiosité : l'onglet « Recherche » ---
+ipcMain.handle('curiosite:etat', async () => ({
+  reglages: curiosite.reglages(),
+  enCours: surveillanceCuriosite && surveillanceCuriosite.etat.enCours,
+  decouvertes: curiosite.decouvertes(30),
+  sujets: await curiosite.sujets().catch(() => []),
+}));
+ipcMain.handle('curiosite:activer', (_e, oui) => { curiosite.activer(oui); return curiosite.reglages(); });
+ipcMain.handle('curiosite:ecarter', erreurs((nom) => curiosite.ecarter(nom)));
+ipcMain.handle('curiosite:suggerer', erreurs((nom) => curiosite.suggerer(nom)));
+// « Chercher maintenant » : même règle qu'en automatique pour les tâches, une recherche à la fois.
+ipcMain.handle('curiosite:chercher', () => {
+  if (!surveillanceCuriosite || surveillanceCuriosite.etat.enCours) return false;
+  if (journal.historique().enCours) return false;
+  surveillanceCuriosite.essayer(true).catch(() => {});
+  return true;
+});
+// Les liens des découvertes s'ouvrent dans le navigateur par défaut (adresses web seulement).
+ipcMain.handle('liens:ouvrir', (_e, adresse) => {
+  if (typeof adresse === 'string' && /^https?:\/\/[^\s]+$/.test(adresse)) shell.openExternal(adresse);
+});
 
 // --- Commande vocale et téléphone ---
 ipcMain.handle('voix:disponible', () => voix.disponible());

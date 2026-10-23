@@ -591,6 +591,7 @@ function montrerOnglet(id) {
   $('#vue-terminal').hidden = id !== 'terminal';
   $('#vue-journal').hidden = id !== 'journal';
   $('#vue-notes').hidden = id !== 'notes';
+  $('#vue-recherche').hidden = id !== 'recherche';
   $('#terminal-relancer').hidden = id !== 'terminal';
   const outil = outilsWeb.find((o) => o.id === id);
   $('#outils-web').hidden = !outil;
@@ -604,6 +605,7 @@ function montrerOnglet(id) {
   for (const [cle, w] of vuesWeb) w.hidden = cle !== id;
   if (id === 'terminal') setTimeout(() => { ajusterTerminal(); if (!terminalDemarre) demarrerTerminal(); }, 0);
   if (id === 'journal') rafraichirJournal();
+  if (id === 'recherche') rafraichirRecherche();
 }
 
 async function chargerOnglets() {
@@ -619,7 +621,7 @@ async function chargerOnglets() {
     zone.append(b);
   }
   document.querySelectorAll('#onglets .onglet').forEach((b) => { b.onclick = () => montrerOnglet(b.dataset.onglet); });
-  if (!['terminal', 'journal', 'notes'].includes(ongletActif)) montrerOnglet('journal');
+  if (!['terminal', 'journal', 'notes', 'recherche'].includes(ongletActif)) montrerOnglet('journal');
 }
 $('#web-retour').onclick = () => { const w = vuesWeb.get(ongletActif); if (w && w.canGoBack()) w.goBack(); };
 $('#web-recharger').onclick = () => { const w = vuesWeb.get(ongletActif); if (w) w.reload(); };
@@ -688,6 +690,122 @@ for (const [id, champ] of [['#notes-perso', 'notes'], ['#notes-contexte', 'conte
     minuteurNotes = setTimeout(() => janova.notes.ecrire({ [champ]: $(id).value }), 700);
   });
 }
+
+// --- Recherche : la curiosité de Janova (gratuite, sans Claude) ---
+// Tout ce qui vient d'internet est affiché comme du texte (textContent), jamais comme du code.
+let rechercheDirecte = null; // les étapes de la recherche en cours
+const lienWeb = (adresse, texte) => {
+  const a = el('a', 'lien-web', texte || adresse);
+  a.href = '#';
+  a.title = adresse;
+  a.onclick = (e) => { e.preventDefault(); janova.liens.ouvrir(adresse); };
+  return a;
+};
+
+function afficherDirect() {
+  const zone = $('#recherche-direct');
+  zone.innerHTML = '';
+  if (!rechercheDirecte) {
+    zone.className = 'etat';
+    zone.textContent = 'Aucune recherche en cours.';
+    return;
+  }
+  zone.className = '';
+  const ol = el('ol');
+  for (const e of rechercheDirecte) {
+    if (e.etape === 'sujet') zone.append(el('div', 'tete', `Je cherche : ${e.sujet}`), el('div', 'pourquoi', `Pourquoi : ${e.pourquoi}`));
+    if (e.etape === 'lecture') { const li = el('li', 'texte', 'Je lis '); li.append(lienWeb(e.adresse, new URL(e.adresse).hostname)); ol.append(li); }
+    if (e.etape === 'erreur') ol.append(el('li', 'erreur', `${e.source} : ${e.message}`));
+    if (e.etape === 'resultat') ol.append(el('li', 'fin', 'Terminé : découverte enregistrée.'));
+    if (e.etape === 'rien') ol.append(el('li', 'fin', e.raison));
+  }
+  if (!rechercheDirecte.length) ol.append(el('li', 'texte', 'Démarrage…'));
+  zone.append(ol);
+}
+
+function afficherDecouverte(d) {
+  const li = el('li');
+  const l1 = el('div', 'l1');
+  l1.append(el('span', 't', d.sujet), el('span', 'quand', dateCourte(d.date)));
+  li.append(l1, el('div', 'pourquoi', 'Pourquoi : ' + d.pourquoi));
+  const ul = el('ul', 'appris');
+  for (const l of (d.appris || []).slice(0, 5)) ul.append(el('li', '', l));
+  li.append(ul);
+  const sources = el('div', 'sources');
+  for (const s of (d.sources || []).filter((s) => /^https:\/\//.test(s.adresse || ''))) {
+    sources.append(lienWeb(s.adresse, `${s.source} : ${s.titre}`));
+  }
+  li.append(sources);
+  if (d.resume_par === 'ollama') li.append(el('div', 'couche', 'Résumé par le modèle local (Ollama)'));
+  return li;
+}
+
+async function rafraichirRecherche() {
+  const etat = await janova.curiosite.etat();
+  const active = etat.reglages.active;
+  const bouton = $('#curiosite-interrupteur');
+  bouton.textContent = active ? 'Curiosité : en marche' : 'Curiosité : en pause';
+  bouton.classList.toggle('actif', active);
+  $('#curiosite-explication').textContent = active
+    ? `Je cherche quand l'ordinateur est inactif depuis ${etat.reglages.inactiviteMin} min, au plus une fois toutes les ${etat.reglages.intervalleMin} min, jamais pendant une tâche.`
+    : 'En pause : je ne lis rien sur internet tout seul.';
+  rechercheDirecte = etat.enCours ? etat.enCours.evenements : rechercheDirecte && rechercheDirecte.some((e) => e.etape === 'resultat' || e.etape === 'rien') ? rechercheDirecte : null;
+  $('#curiosite-chercher').disabled = !!etat.enCours;
+  afficherDirect();
+  const ulS = $('#recherche-sujets');
+  ulS.innerHTML = '';
+  for (const s of etat.sujets.slice(0, 12)) {
+    const li = el('li');
+    const l1 = el('div', 'l1');
+    const barre = el('span', 'interet');
+    barre.append(el('span'));
+    barre.firstChild.style.width = Math.round(s.interet * 100) + '%';
+    barre.title = `Intérêt : ${Math.round(s.interet * 100)} %`;
+    const ecarter = el('button', 'petit', 'Écarter');
+    ecarter.title = 'Ne plus chercher sur ce sujet';
+    ecarter.onclick = async () => { ecarter.disabled = true; await janova.curiosite.ecarter(s.nom); rafraichirRecherche(); };
+    l1.append(el('span', 't', s.nom), barre, ecarter);
+    li.append(l1, el('div', 'pourquoi', s.pourquoi));
+    ulS.append(li);
+  }
+  if (!etat.sujets.length) ulS.append(el('li', 'etat', 'Aucun sujet pour l\'instant.'));
+  const ulD = $('#recherche-decouvertes');
+  ulD.innerHTML = '';
+  for (const d of etat.decouvertes) ulD.append(afficherDecouverte(d));
+  if (!etat.decouvertes.length) ulD.append(el('li', 'etat', 'Aucune découverte pour l\'instant.'));
+}
+
+$('#curiosite-interrupteur').onclick = async () => {
+  const { active } = (await janova.curiosite.etat()).reglages;
+  await janova.curiosite.activer(!active);
+  rafraichirRecherche();
+};
+$('#curiosite-chercher').onclick = async () => {
+  $('#curiosite-chercher').disabled = true;
+  if (!(await janova.curiosite.chercher())) {
+    $('#curiosite-chercher').disabled = false;
+    $('#sujet-erreur').textContent = 'Pas maintenant : une recherche ou une tâche de Claude Code est en cours.';
+  }
+};
+$('#sujet-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const nom = $('#sujet-saisie').value.trim();
+  $('#sujet-erreur').textContent = '';
+  if (!nom) return;
+  const r = await janova.curiosite.suggerer(nom);
+  const res = r.ok || {};
+  if (r.erreur || !res.ok) { $('#sujet-erreur').textContent = r.erreur || res.erreur; return; }
+  $('#sujet-saisie').value = '';
+  rafraichirRecherche();
+};
+janova.curiosite.surEvenement((e) => {
+  if (e.etape === 'debut') rechercheDirecte = [];
+  else if (e.etape !== 'fin' && rechercheDirecte) rechercheDirecte.push(e);
+  document.querySelector('[data-onglet=recherche]').classList.toggle('tourne', e.etape !== 'fin');
+  if (ongletActif !== 'recherche') return;
+  if (e.etape === 'fin') rafraichirRecherche();
+  else afficherDirect();
+});
 
 // --- Commande vocale : la voix est transcrite sur le PC, rien ne part sur internet ---
 let enregistrement = null;
