@@ -85,6 +85,9 @@ async function choisirProjet(id) {
   demarrerTerminal();
   remplirDepots();
   chargerTaches();
+  chargerOnglets();
+  chargerNotes();
+  verifierDeploiement();
   await nouvelleDiscussion(projet.id);
 }
 
@@ -160,16 +163,17 @@ function bulle(cls, texte) {
   return m;
 }
 
-// Affiche un message de Claude ; les blocs janova-tache / janova-projet deviennent des cartes avec Oui / Non.
+// Affiche un message de Claude ; les blocs janova-tache / -projet / -destination deviennent des cartes avec Oui / Non.
 function afficherClaude(vue, fini) {
-  const morceaux = vue.message.texte.split(/```janova-(tache|projet)\s*\n([\s\S]*?)(?:```|$)/);
+  const morceaux = vue.message.texte.split(/```janova-(tache|projet|destination)\s*\n([\s\S]*?)(?:```|$)/);
   vue.el.innerHTML = '';
   let n = 0;
   for (let i = 0; i < morceaux.length; i += 3) {
     if (morceaux[i].trim()) vue.el.insertAdjacentHTML('beforeend', rendreTexte(morceaux[i]));
     if (i + 2 >= morceaux.length) break;
     const genre = morceaux[i + 1];
-    vue.el.append(fini ? carte(genre, morceaux[i + 2], vue, n) : el('div', 'etat', genre === 'tache' ? 'Rédaction de la tâche…' : 'Préparation du projet…'));
+    const attente = { tache: 'Rédaction de la tâche…', projet: 'Préparation du projet…', destination: 'Préparation de la mise en ligne…' };
+    vue.el.append(fini ? carte(genre, morceaux[i + 2], vue, n) : el('div', 'etat', attente[genre]));
     n++;
   }
   if (!fini && vue.outil) vue.el.append(el('div', 'etat', vue.outil));
@@ -186,6 +190,8 @@ function carte(genre, json, vue, n) {
     c.append(el('div', 't', d.titre));
     if (d.dossier) c.append(el('div', 'd', 'Partie : ' + d.dossier));
     c.append(el('div', 'i', d.instructions));
+  } else if (genre === 'destination') {
+    c.append(el('div', 't', 'Mise en ligne : ' + d.nom), el('div', 'd', (d.type || '') + (d.verification ? ' · ' + d.verification : '')), el('div', 'i', d.description || ''));
   } else {
     c.append(el('div', 't', 'Nouveau projet : ' + d.nom), el('div', 'i', d.description || ''));
   }
@@ -200,6 +206,7 @@ function carte(genre, json, vue, n) {
     const textes = {
       tache: { oui: '✔ Ajoutée et cochée : Claude Code va la faire.', non: '✖ Pas lancée.' },
       projet: { oui: '✔ Projet créé.', non: '✖ Pas créé.' },
+      destination: { oui: '✔ Enregistrée : le bouton « Mettre en ligne » la propose.', non: '✖ Pas enregistrée.' },
     };
     boutons.append(el('span', 'etat', textes[genre][rep] || rep));
   } else if (genre === 'tache') {
@@ -208,6 +215,18 @@ function carte(genre, json, vue, n) {
       if (!projet || projet.id !== discussion.projet) return alert('Ouvre d\'abord ce projet dans le menu en haut.');
       await janova.taches.ajouter({ ...d, cochee: true });
       chargerTaches();
+      repondre('oui');
+    };
+    const non = el('button', 'secondaire', 'Non');
+    non.onclick = () => repondre('non');
+    boutons.append(oui, non);
+  } else if (genre === 'destination') {
+    const oui = el('button', '', 'Oui, enregistrer');
+    oui.onclick = async () => {
+      if (!projet || projet.id !== discussion.projet) return alert('Ouvre d\'abord ce projet dans le menu en haut.');
+      const r = await janova.deploiement.enregistrer(d);
+      if (r.erreur) return boutons.append(el('span', 'texte-erreur', r.erreur));
+      verifierDeploiement();
       repondre('oui');
     };
     const non = el('button', 'secondaire', 'Non');
@@ -383,12 +402,11 @@ function ligneTache(t) {
   const case_ = el('input');
   case_.type = 'checkbox';
   case_.checked = t.cochee;
-  case_.disabled = t.statut === 'en_cours' || t.statut === 'terminee';
+  // Une mise en ligne ne se recoche pas : elle demande un nouveau feu vert, par le bouton « Mettre en ligne ».
+  case_.disabled = t.statut === 'en_cours' || t.statut === 'terminee' || !!t.type;
   case_.title = t.cochee ? 'Décocher pour mettre en pause' : 'Cocher pour que Claude Code la fasse';
   case_.onchange = async () => {
-    const champs = { cochee: case_.checked };
-    if (case_.checked && (t.statut === 'echec' || t.statut === 'bloquee')) Object.assign(champs, { statut: 'en_attente', resultat: null });
-    await janova.taches.changer(t.id, champs);
+    await janova.taches.changer(t.id, { cochee: case_.checked, relancer: case_.checked });
     chargerTaches();
   };
   const nom = el('span', 'nom', t.titre);
@@ -411,6 +429,19 @@ function ligneTache(t) {
     if (t.resultat) det.append(el('h4', '', 'Résultat'), el('div', '', t.resultat));
     if (ouvertes.has(t.id) && t.instructions && t.instructions !== t.titre) det.append(el('h4', '', 'Instructions'), el('div', '', t.instructions));
     if (det.childNodes.length) li.append(det);
+  }
+  // Retour en arrière en un clic : défaire une tâche qui a cassé quelque chose.
+  if (t.annulation) {
+    const textes = { demandee: 'Annulation en cours…', faite: '↩ ' + (t.annulation_resultat || 'Tâche annulée.'), impossible: '⚠ ' + (t.annulation_resultat || 'Annulation impossible.') };
+    li.append(el('div', 'etat', textes[t.annulation]));
+  } else if (t.statut === 'terminee' && !t.type && t.commit_apres && t.commit_apres !== t.commit_avant && ouvertes.has(t.id)) {
+    const b = el('button', 'annuler', '↩ Annuler cette tâche');
+    b.onclick = async () => {
+      if (!confirm('Défaire tout ce que cette tâche a changé ?')) return;
+      await janova.taches.annuler(t.id);
+      chargerTaches();
+    };
+    li.append(b);
   }
   return li;
 }
@@ -517,3 +548,253 @@ $('#maj-revenir').onclick = async () => {
 
 verifierMaj();
 janova.taches.surChangement(verifierMaj);
+
+// --- Onglets du centre : terminal, journal, notes, et les outils web du projet ---
+// Une fenêtre web n'est chargée qu'au moment où on l'ouvre (peu d'énergie), et fermée au changement de projet.
+let ongletActif = 'terminal';
+let outilsWeb = [];
+const vuesWeb = new Map();
+
+function montrerOnglet(id) {
+  ongletActif = id;
+  document.querySelectorAll('#onglets .onglet').forEach((b) => b.classList.toggle('actif', b.dataset.onglet === id));
+  $('#vue-terminal').hidden = id !== 'terminal';
+  $('#vue-journal').hidden = id !== 'journal';
+  $('#vue-notes').hidden = id !== 'notes';
+  $('#terminal-relancer').hidden = id !== 'terminal';
+  const outil = outilsWeb.find((o) => o.id === id);
+  $('#outils-web').hidden = !outil;
+  if (outil && !vuesWeb.has(id)) {
+    const w = document.createElement('webview');
+    w.setAttribute('partition', 'persist:web');
+    w.setAttribute('src', outil.adresse);
+    $('#vues-web').append(w);
+    vuesWeb.set(id, w);
+  }
+  for (const [cle, w] of vuesWeb) w.hidden = cle !== id;
+  if (id === 'terminal') setTimeout(ajusterTerminal, 0);
+  if (id === 'journal') rafraichirJournal();
+}
+
+async function chargerOnglets() {
+  for (const w of vuesWeb.values()) w.remove();
+  vuesWeb.clear();
+  outilsWeb = await janova.liens.lire();
+  const zone = $('#onglets-web');
+  zone.innerHTML = '';
+  for (const o of outilsWeb) {
+    const b = el('button', 'onglet', o.nom);
+    b.dataset.onglet = o.id;
+    b.title = o.adresse;
+    zone.append(b);
+  }
+  document.querySelectorAll('#onglets .onglet').forEach((b) => { b.onclick = () => montrerOnglet(b.dataset.onglet); });
+  if (!['terminal', 'journal', 'notes'].includes(ongletActif)) montrerOnglet('terminal');
+}
+$('#web-retour').onclick = () => { const w = vuesWeb.get(ongletActif); if (w && w.canGoBack()) w.goBack(); };
+$('#web-recharger').onclick = () => { const w = vuesWeb.get(ongletActif); if (w) w.reload(); };
+
+// --- Journal en direct ---
+let suivi = { id: null, fichier: null, position: 0, lignes: [] };
+const minutes = (s) => (s < 60 ? `${Math.max(1, Math.round(s))} s` : `${Math.round(s / 60)} min`);
+
+async function rafraichirJournal() {
+  const { enCours, taches } = await janova.journal.historique();
+  document.querySelector('[data-onglet=journal]').classList.toggle('tourne', !!enCours);
+  if (ongletActif !== 'journal') return;
+  const direct = $('#journal-direct');
+  if (!enCours) {
+    suivi = { id: null, fichier: null, position: 0, lignes: [] };
+    direct.className = 'etat';
+    direct.textContent = 'Rien ne tourne en ce moment.';
+  } else {
+    if (suivi.id !== enCours.id) suivi = { id: enCours.id, fichier: enCours.journal, position: 0, lignes: [] };
+    if (suivi.fichier) {
+      const r = await janova.journal.lire({ fichier: suivi.fichier, position: suivi.position });
+      suivi.position = r.position;
+      suivi.lignes.push(...r.lignes);
+    }
+    direct.className = '';
+    direct.innerHTML = '';
+    const depuis = (Date.now() - new Date(enCours.debut).getTime()) / 1000;
+    direct.append(el('div', 'tete', `${enCours.projetNom} · ${enCours.titre} · depuis ${minutes(depuis)}`));
+    const ol = el('ol');
+    for (const l of suivi.lignes.slice(-60)) ol.append(el('li', l.genre, l.texte.length > 300 ? l.texte.slice(0, 300) + '…' : l.texte));
+    if (!suivi.lignes.length) ol.append(el('li', 'texte', 'Démarrage…'));
+    direct.append(ol);
+    ol.scrollTop = 1e9;
+  }
+  const ul = $('#journal-historique');
+  const ouverts = new Set([...ul.querySelectorAll('li.ouvert')].map((li) => li.dataset.id));
+  ul.innerHTML = '';
+  for (const t of taches.slice(0, 100)) {
+    const li = el('li');
+    li.dataset.id = t.id;
+    const l1 = el('div', 'l1');
+    l1.append(el('span', 'badge ' + t.statut, STATUTS[t.statut] || t.statut), el('span', 't', t.titre));
+    li.append(l1, el('div', 'l2', [t.projetNom, dateCourte(t.fin || t.debut), t.duree_s ? minutes(t.duree_s) : ''].filter(Boolean).join(' · ')));
+    if (ouverts.has(t.id) && t.resultat) { li.classList.add('ouvert'); li.append(el('div', 'res', t.resultat)); }
+    li.onclick = () => { li.classList.toggle('ouvert'); rafraichirJournal(); };
+    ul.append(li);
+  }
+  if (!taches.length) ul.append(el('li', 'etat', 'Aucune tâche faite pour l\'instant.'));
+}
+setInterval(rafraichirJournal, 2000);
+janova.telephone.sujet().then((sujet) => {
+  $('#telephone').textContent = `Notifications sur ton téléphone : installe l'application gratuite « ntfy », puis abonne-toi au sujet ${sujet}`;
+});
+
+// --- Notes et mémoire du projet (enregistrées toutes seules) ---
+let minuteurNotes = null;
+async function chargerNotes() {
+  const d = await janova.notes.lire();
+  if (!d) return;
+  $('#notes-perso').value = d.notes;
+  $('#notes-contexte').value = d.contexte;
+}
+for (const [id, champ] of [['#notes-perso', 'notes'], ['#notes-contexte', 'contexte']]) {
+  $(id).addEventListener('input', () => {
+    clearTimeout(minuteurNotes);
+    minuteurNotes = setTimeout(() => janova.notes.ecrire({ [champ]: $(id).value }), 700);
+  });
+}
+
+// --- Commande vocale : la voix est transcrite sur le PC, rien ne part sur internet ---
+let enregistrement = null;
+
+function enWav(morceaux, frequence) {
+  // Rassemble l'enregistrement, le ramène à 16 kHz mono et l'emballe en WAV (ce que lit le moteur de voix).
+  const total = morceaux.reduce((n, m) => n + m.length, 0);
+  const brut = new Float32Array(total);
+  let i = 0;
+  for (const m of morceaux) { brut.set(m, i); i += m.length; }
+  const pas = frequence / 16000;
+  const n = Math.floor(total / pas);
+  const donnees = new DataView(new ArrayBuffer(44 + n * 2));
+  const ecrireTexte = (o, t) => [...t].forEach((c, k) => donnees.setUint8(o + k, c.charCodeAt(0)));
+  ecrireTexte(0, 'RIFF'); donnees.setUint32(4, 36 + n * 2, true); ecrireTexte(8, 'WAVE'); ecrireTexte(12, 'fmt ');
+  donnees.setUint32(16, 16, true); donnees.setUint16(20, 1, true); donnees.setUint16(22, 1, true);
+  donnees.setUint32(24, 16000, true); donnees.setUint32(28, 32000, true); donnees.setUint16(32, 2, true); donnees.setUint16(34, 16, true);
+  ecrireTexte(36, 'data'); donnees.setUint32(40, n * 2, true);
+  for (let k = 0; k < n; k++) {
+    const v = Math.max(-1, Math.min(1, brut[Math.floor(k * pas)]));
+    donnees.setInt16(44 + k * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+  }
+  return donnees.buffer;
+}
+
+async function demarrerMicro() {
+  const flux = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  const ctx = new AudioContext();
+  const source = ctx.createMediaStreamSource(flux);
+  const capteur = ctx.createScriptProcessor(4096, 1, 1);
+  const morceaux = [];
+  capteur.onaudioprocess = (e) => morceaux.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  source.connect(capteur);
+  capteur.connect(ctx.destination);
+  enregistrement = { flux, ctx, capteur, morceaux };
+}
+
+async function arreterMicro() {
+  const { flux, ctx, capteur, morceaux } = enregistrement;
+  enregistrement = null;
+  capteur.disconnect();
+  flux.getTracks().forEach((t) => t.stop());
+  const frequence = ctx.sampleRate;
+  await ctx.close();
+  return enWav(morceaux, frequence);
+}
+
+$('#micro').onclick = async () => {
+  const b = $('#micro');
+  if (!enregistrement) {
+    try {
+      await demarrerMicro();
+    } catch {
+      return alert('Je n\'ai pas accès au micro. Vérifie qu\'il est branché et autorisé.');
+    }
+    b.classList.add('enregistre');
+    b.textContent = '■ Finir';
+    return;
+  }
+  b.classList.remove('enregistre');
+  b.textContent = 'Écoute…';
+  b.disabled = true;
+  const r = await janova.voix.transcrire(await arreterMicro());
+  b.disabled = false;
+  b.textContent = '🎤 Parler';
+  if (r.erreur) return alert(r.erreur);
+  const zone = $('#chat-saisie');
+  zone.value = (zone.value.trim() ? zone.value.trim() + ' ' : '') + r.ok;
+  zone.focus();
+};
+janova.voix.disponible().then((ok) => { $('#micro').hidden = !ok; });
+
+// --- Mise en ligne : Janova montre ce qui va partir, et attend le feu vert ---
+const dialogueDeployer = $('#dialogue-deployer');
+let destinationsProjet = [];
+let destinationChoisie = null;
+
+async function verifierDeploiement() {
+  destinationsProjet = await janova.deploiement.destinations();
+  $('#deployer-bouton').hidden = !destinationsProjet.length;
+}
+
+function ouvrirDeploiement() {
+  const choix = $('#deployer-choix');
+  choix.innerHTML = '';
+  $('#deployer-resume').innerHTML = '';
+  $('#deployer-erreur').textContent = '';
+  $('#deployer-go').disabled = true;
+  $('#deployer-revenir').hidden = true;
+  destinationChoisie = null;
+  for (const d of destinationsProjet) {
+    const label = el('label');
+    const radio = el('input');
+    radio.type = 'radio';
+    radio.name = 'destination';
+    radio.onchange = () => choisirDestination(d);
+    label.append(radio, document.createTextNode(d.nom + (d.derniere ? ` (en ligne depuis le ${dateCourte(d.derniere.date)})` : '')));
+    choix.append(label);
+  }
+  dialogueDeployer.showModal();
+}
+
+async function choisirDestination(d) {
+  destinationChoisie = d;
+  const zone = $('#deployer-resume');
+  zone.innerHTML = '';
+  $('#deployer-erreur').textContent = '';
+  $('#deployer-go').disabled = true;
+  const r = await janova.deploiement.resume(d.id);
+  if (r.erreur) { $('#deployer-erreur').textContent = r.erreur; return; }
+  const s = r.ok;
+  zone.append(el('p', '', s.description));
+  if (s.changements.length) {
+    zone.append(el('p', '', s.premiere ? 'Dernières modifications :' : 'Ce qui va changer en ligne :'));
+    const ul = el('ul');
+    for (const c of s.changements) ul.append(el('li', '', c));
+    zone.append(ul);
+  } else {
+    zone.append(el('p', 'aide', 'Rien de nouveau depuis la dernière mise en ligne.'));
+  }
+  if (s.aFusionner) zone.append(el('p', 'aide', `Le travail de Claude Code (${s.aFusionner} enregistrement(s)) rejoindra d'abord la version principale.`));
+  zone.append(el('p', 'aide', 'La version actuellement en ligne est gardée : tu pourras y revenir en un clic.'));
+  $('#deployer-go').disabled = false;
+  $('#deployer-revenir').hidden = !s.precedente;
+}
+
+$('#deployer-bouton').onclick = ouvrirDeploiement;
+$('#deployer-fermer').onclick = () => dialogueDeployer.close();
+async function donnerFeuVert(retour) {
+  if (!destinationChoisie) return;
+  const r = await janova.deploiement.feuVert({ id: destinationChoisie.id, retour });
+  if (r.erreur) { $('#deployer-erreur').textContent = r.erreur; return; }
+  dialogueDeployer.close();
+  chargerTaches();
+  montrerOnglet('journal');
+}
+$('#deployer-go').onclick = () => donnerFeuVert(false);
+$('#deployer-revenir').onclick = () => {
+  if (confirm('Remettre en ligne la version précédente de « ' + destinationChoisie.nom + ' » ?')) donnerFeuVert(true);
+};

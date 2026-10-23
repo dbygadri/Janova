@@ -13,7 +13,8 @@
     <select id="projet" title="Changer de projet"></select>
     <button id="projet-nouveau" class="secondaire">+ Nouveau projet</button>
     <span id="projet-etat" class="etat"></span>
-    <button id="maj-bouton" class="secondaire maj" hidden></button>
+    <button id="deployer-bouton" class="secondaire maj" hidden>Mettre en ligne</button>
+    <button id="maj-bouton" class="secondaire" hidden></button>
   </header>
   <main>
     <section id="zone-chat" class="panneau" style="flex-basis: 30%">
@@ -37,16 +38,46 @@
       <div id="messages"></div>
       <form id="chat-form">
         <textarea id="chat-saisie" rows="3" placeholder="Écris à Janova… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
-        <button id="chat-bouton" type="submit">Envoyer</button>
+        <div class="boutons-chat">
+          <button id="chat-bouton" type="submit">Envoyer</button>
+          <button id="micro" type="button" class="secondaire" title="Parler (cliquer pour commencer, recliquer pour finir)" hidden>🎤 Parler</button>
+        </div>
       </form>
     </section>
     <div class="separateur" data-cible="zone-chat"></div>
     <section id="zone-terminal" class="panneau" style="flex: 1">
-      <div class="titre-panneau">
-        Terminal Claude Code
-        <button id="terminal-relancer" class="petit">Relancer</button>
+      <div class="titre-panneau onglets-centre">
+        <nav id="onglets">
+          <button data-onglet="terminal" class="onglet actif">Terminal</button>
+          <button data-onglet="journal" class="onglet">Journal</button>
+          <button data-onglet="notes" class="onglet">Notes</button>
+          <span id="onglets-web"></span>
+        </nav>
+        <span id="outils-onglet">
+          <button id="terminal-relancer" class="petit">Relancer</button>
+          <span id="outils-web" hidden>
+            <button id="web-retour" class="petit" title="Page précédente">←</button>
+            <button id="web-recharger" class="petit" title="Recharger">⟳</button>
+          </span>
+        </span>
       </div>
-      <div id="terminal"></div>
+      <div id="vue-terminal" class="vue"><div id="terminal"></div></div>
+      <div id="vue-journal" class="vue" hidden>
+        <h4>En ce moment</h4>
+        <div id="journal-direct" class="etat">Rien ne tourne en ce moment.</div>
+        <h4>Toutes les tâches</h4>
+        <ul id="journal-historique"></ul>
+        <p id="telephone" class="aide"></p>
+      </div>
+      <div id="vue-notes" class="vue" hidden>
+        <label>Mes notes <span class="aide">(enregistrées toutes seules)</span>
+          <textarea id="notes-perso" placeholder="Tes idées, tes rappels pour ce projet…"></textarea>
+        </label>
+        <label>Mémoire du projet <span class="aide">(relue par Claude au début de chaque tâche ; tu peux la corriger)</span>
+          <textarea id="notes-contexte"></textarea>
+        </label>
+      </div>
+      <div id="vues-web"></div>
     </section>
     <div class="separateur" data-cible="zone-taches" data-inverse="1"></div>
     <section id="zone-taches" class="panneau" style="flex-basis: 26%">
@@ -73,6 +104,19 @@
         <button id="projet-creer" value="creer">Créer</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="dialogue-deployer">
+    <h3>Mettre en ligne</h3>
+    <div id="deployer-choix"></div>
+    <div id="deployer-resume"></div>
+    <p id="deployer-erreur" class="texte-erreur"></p>
+    <div class="boutons">
+      <button id="deployer-revenir" class="lien" hidden>Revenir à la version précédente</button>
+      <span class="espace"></span>
+      <button id="deployer-fermer" class="secondaire">Plus tard</button>
+      <button id="deployer-go" disabled>Oui, mettre en ligne</button>
+    </div>
   </dialog>
 
   <dialog id="dialogue-maj">

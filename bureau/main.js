@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -8,6 +8,11 @@ const taches = require('./lib/taches');
 const discussions = require('./lib/discussions');
 const miseAJour = require('./lib/mise-a-jour');
 const memoire = require('./lib/memoire');
+const journal = require('./lib/journal');
+const deploiement = require('./lib/deploiement');
+const voix = require('./lib/voix');
+const { liens } = require('./lib/liens');
+const { sujetTelephone } = require('./lib/notifier');
 const cerveau = require('./cerveau');
 
 const ENV = cerveau.ENV;
@@ -22,7 +27,14 @@ Si l'utilisateur veut créer un nouveau projet, propose-le exactement sous cette
 \`\`\`janova-projet
 {"nom": "nom-du-projet", "description": "une phrase"}
 \`\`\`
-puis demande : « Est-ce que je crée ce projet ? » Janova crée alors le dossier et un dépôt GitHub privé.`;
+puis demande : « Est-ce que je crée ce projet ? » Janova crée alors le dossier et un dépôt GitHub privé.
+
+Pour mettre un projet en ligne, l'utilisateur utilise le bouton « Mettre en ligne » en haut : Janova lui montre ce qui va partir, attend son feu vert, puis s'en occupe. Ne propose jamais de tâche Claude Code qui déploie.
+Si le projet n'a pas encore de destination de mise en ligne, tu peux en proposer une, exactement sous cette forme :
+\`\`\`janova-destination
+{"id": "court-sans-espace", "nom": "nom simple", "depot": "dépôt concerné", "type": "vercel | vps | android | autre", "description": "ce qui sera mis en ligne, en mots simples", "verification": "adresse à vérifier", "instructions": "étapes précises pour Claude Code : construire, mettre en ligne, garder la version précédente, vérifier", "retour": "étapes précises pour remettre la version précédente"}
+\`\`\`
+puis demande : « J'enregistre cette destination ? »`;
 
 function consigneChat(projet) {
   if (!projet) {
@@ -34,9 +46,15 @@ function consigneChat(projet) {
   const soiMeme = projet.id === 'gh-janova'
     ? `\nCe projet est Janova elle-même : « janova/ » est le noyau d'IA locale (Python), « bureau/ » est l'application que l'utilisateur utilise en ce moment (Electron). Les changements de « bureau/ » ne s'appliquent qu'après son oui, via le bouton « Nouvelle version de Janova ». Les garde-fous (bureau/lib/garde-fous.js, bureau/lib/mise-a-jour.js, bureau/runner.js, bureau/cerveau/) ne se modifient jamais sans qu'il l'ait demandé explicitement : préviens-le avant.`
     : '';
+  const destinations = deploiement.destinations(projet).map((d) => `- ${d.nom} (${d.type})`).join('\n');
   return CONSIGNE_COMMUNE + `
 
 Projet actuel : ${projet.nom}, dans ${projet.dossier}. ${depots}${soiMeme}
+
+Mémoire du projet (ce qui a été fait, ce qui reste, les décisions) :
+${memoire.contexteCourt(projet)}
+
+Destinations de mise en ligne déjà connues : ${destinations ? '\n' + destinations : 'aucune.'}
 
 Quand l'utilisateur veut un travail sur le code, rédige une tâche pour Claude Code, exactement sous cette forme :
 \`\`\`janova-tache
@@ -61,7 +79,14 @@ function creerFenetre() {
     backgroundColor: '#16181d',
     autoHideMenuBar: true,
     show: !process.argv.includes('--autotest'),
-    webPreferences: { preload: path.join(__dirname, 'preload.js') },
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), webviewTag: true },
+  });
+  // Les fenêtres web (GitHub, Vercel…) n'ont accès à rien de Janova : pas de préchargement, pas de Node.
+  fenetre.webContents.on('will-attach-webview', (_e, prefs, params) => {
+    delete prefs.preload;
+    prefs.nodeIntegration = false;
+    prefs.contextIsolation = true;
+    if (!/^https:\/\//.test(params.src || '')) _e.preventDefault();
   });
   fenetre.loadFile('index.html');
   fenetre.on('closed', () => {
@@ -212,12 +237,76 @@ function redemarrer() {
 // --- Tâches du projet actuel ---
 ipcMain.handle('taches:lire', () => (projet ? taches.lire(projet) : []));
 ipcMain.handle('taches:ajouter', (_e, t) => projet && taches.ajouter(projet, t));
-ipcMain.handle('taches:changer', (_e, id, champs) => projet && taches.changer(projet, id, champs));
+// Depuis la fenêtre, on ne peut que cocher, décocher ou relancer une tâche : jamais donner un feu vert.
+ipcMain.handle('taches:changer', (_e, id, { cochee, relancer }) => {
+  if (!projet) return;
+  const t = taches.lire(projet).find((x) => x.id === id);
+  if (!t || t.type) return;
+  const champs = { cochee: !!cochee };
+  if (relancer && (t.statut === 'echec' || t.statut === 'bloquee')) Object.assign(champs, { statut: 'en_attente', resultat: null });
+  return taches.changer(projet, id, champs);
+});
+ipcMain.handle('taches:annuler', (_e, id) => {
+  const t = projet && taches.lire(projet).find((x) => x.id === id);
+  if (t && t.statut === 'terminee' && !t.type && !t.annulation) return taches.changer(projet, id, { annulation: 'demandee' });
+});
 ipcMain.handle('taches:supprimer', (_e, id) => projet && taches.supprimer(projet, id));
 
+// Les fenêtres web gardent tes connexions d'une fois sur l'autre. Elles se présentent comme un navigateur
+// ordinaire, sinon Google refuse la connexion à la Play Console.
+function preparerSessions() {
+  const web = session.fromPartition('persist:web');
+  web.setUserAgent(web.getUserAgent().replace(/\s*(Electron|janova-bureau)\/\S+/g, ''));
+  // Le micro n'est permis que pour la fenêtre de Janova (dictée), jamais pour les sites.
+  session.defaultSession.setPermissionRequestHandler((wc, permission, rappel) => rappel(permission === 'media' && wc === (fenetre && fenetre.webContents)));
+  web.setPermissionRequestHandler((_wc, permission, rappel) => rappel(permission === 'clipboard-sanitized-write'));
+}
+
 app.whenReady().then(() => {
+  preparerSessions();
   memoire.lisezMoi();
   for (const p of projets.liste()) memoire.noteProjet(p);
   creerFenetre();
 });
 app.on('window-all-closed', () => app.quit());
+
+// --- Notes et mémoire du projet ---
+ipcMain.handle('notes:lire', () => projet && { notes: memoire.lireNotes(projet), contexte: memoire.lireContexte(projet) });
+ipcMain.handle('notes:ecrire', (_e, { notes, contexte }) => {
+  if (!projet) return;
+  if (typeof notes === 'string') memoire.ecrireNotes(projet, notes);
+  if (typeof contexte === 'string') memoire.ecrireContexte(projet, contexte);
+});
+
+// --- Journal en direct ---
+ipcMain.handle('journal:historique', () => journal.historique());
+ipcMain.handle('journal:lire', (_e, { fichier, position }) => {
+  // On ne lit que les journaux de Janova.
+  const dossier = path.join(projets.ETAT, 'journaux');
+  if (!fichier || path.dirname(path.resolve(fichier)) !== dossier) return { lignes: [], position: 0 };
+  return journal.lireDepuis(fichier, position);
+});
+
+// --- Outils web du projet ---
+ipcMain.handle('liens:lire', () => liens(projet));
+
+// --- Mise en ligne ---
+ipcMain.handle('deploiement:destinations', () => (projet ? deploiement.destinations(projet).map((d) => ({
+  id: d.id, nom: d.nom, type: d.type, derniere: deploiement.derniere(projet, d.id),
+})) : []));
+ipcMain.handle('deploiement:resume', erreurs((id) => deploiement.resume(projet, id)));
+ipcMain.handle('deploiement:feu-vert', erreurs(({ id, retour }) => deploiement.feuVert(projet, id, { retour })));
+ipcMain.handle('deploiement:enregistrer', erreurs((d) => {
+  if (!projet) throw new Error('Aucun projet ouvert.');
+  if (!d || !/^[a-z0-9-]{1,40}$/.test(d.id || '') || !d.nom || !d.instructions) throw new Error('Destination incomplète.');
+  const f = memoire.chemin('projets', projet.id, 'deploiement.json');
+  const c = memoire.lireJson(f, { destinations: [] });
+  c.destinations = [...(c.destinations || []).filter((x) => x.id !== d.id), d];
+  memoire.ecrireJson(f, c);
+  return true;
+}));
+
+// --- Commande vocale et téléphone ---
+ipcMain.handle('voix:disponible', () => voix.disponible());
+ipcMain.handle('voix:transcrire', erreurs((wav) => voix.transcrire(wav)));
+ipcMain.handle('telephone:sujet', () => sujetTelephone().sujet);

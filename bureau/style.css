@@ -113,3 +113,55 @@ header .maj.dispo { border-color: var(--accent); color: var(--accent); }
 button.lien { background: none; color: var(--discret); padding: 0; text-decoration: underline; }
 #dialogue-maj .boutons button { white-space: nowrap; }
 .msg .couche { margin-top: 6px; font-size: 11.5px; color: var(--vert); }
+
+/* Onglets du centre : terminal, journal, notes, outils web */
+.onglets-centre { padding: 5px 8px; gap: 8px; }
+#onglets { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+#onglets-web { display: contents; }
+#onglets .onglet { padding: 3px 9px; }
+#onglets .onglet.tourne::after { content: ' ●'; color: var(--accent); }
+.vue { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.vue[hidden] { display: none; }
+#vue-terminal #terminal { flex: 1; }
+#vues-web { display: contents; }
+webview { flex: 1; min-height: 0; background: #fff; }
+webview[hidden] { display: none; }
+#outils-onglet { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* Journal */
+#vue-journal { overflow-y: auto; padding: 4px 14px 14px; }
+#vue-journal h4 { margin: 12px 0 6px; color: var(--discret); font-size: 12.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+#journal-direct .tete { font-weight: 600; margin-bottom: 6px; font-style: normal; color: var(--texte); }
+#journal-direct ol { margin: 0; padding-left: 18px; max-height: 300px; overflow-y: auto; font-style: normal; }
+#journal-direct li { margin: 2px 0; color: var(--texte); }
+#journal-direct li.texte { color: var(--discret); }
+#journal-historique { list-style: none; margin: 0; padding: 0; }
+#journal-historique li { padding: 7px 10px; border: 1px solid var(--bord); border-radius: 8px; margin-bottom: 5px; background: var(--fond); cursor: pointer; }
+#journal-historique .l1 { display: flex; gap: 8px; align-items: center; }
+#journal-historique .l1 .t { flex: 1; }
+#journal-historique .l2 { font-size: 12px; color: var(--discret); margin-top: 2px; }
+#journal-historique .res { white-space: pre-wrap; font-size: 13px; margin-top: 6px; border-top: 1px solid var(--bord); padding-top: 6px; }
+
+/* Notes */
+#vue-notes { padding: 10px 14px; gap: 10px; }
+#vue-notes label { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; font-weight: 600; }
+#vue-notes .aide { font-weight: 400; margin: 0; display: inline; }
+#vue-notes textarea { flex: 1; resize: none; font: 13.5px/1.5 system-ui, "Ubuntu", sans-serif; }
+
+/* Chat : micro */
+.boutons-chat { display: flex; flex-direction: column; gap: 6px; }
+#micro.enregistre { border-color: var(--rouge); color: var(--rouge); }
+
+/* Tâches : annulation */
+#taches .annuler { margin-top: 6px; background: none; border: 1px solid var(--bord); color: var(--discret); padding: 2px 8px; font-size: 12px; }
+
+/* Mise en ligne */
+#dialogue-deployer { width: 480px; }
+#deployer-choix label { flex-direction: row; align-items: center; gap: 8px; color: var(--texte); font-size: 14px; margin-bottom: 4px; }
+#deployer-resume ul { margin: 6px 0 10px; padding-left: 20px; max-height: 180px; overflow-y: auto; }
+#deployer-resume p { margin: 6px 0; }
+#dialogue-deployer .boutons button { white-space: nowrap; }
+#maj-bouton.dispo { border-color: var(--accent); color: var(--accent); }
+#onglets { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+#onglets .onglet { padding: 3px 7px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+.onglets-centre { min-width: 0; }
