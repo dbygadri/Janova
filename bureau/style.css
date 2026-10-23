@@ -111,3 +111,4 @@ header .maj.dispo { border-color: var(--accent); color: var(--accent); }
 #maj-progres { background: var(--fond); border-radius: 6px; padding: 8px; font-size: 12px; max-height: 140px; overflow-y: auto; white-space: pre-wrap; }
 #dialogue-maj .espace { flex: 1; }
 button.lien { background: none; color: var(--discret); padding: 0; text-decoration: underline; }
+#dialogue-maj .boutons button { white-space: nowrap; }
