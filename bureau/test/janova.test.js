@@ -183,3 +183,46 @@ test('réflexes : « Retenir » fait apprendre la réponse au noyau, qui la sert
   assert.strictEqual(r.reponse, 'La mémoire vive de l’ordinateur.');
   assert.ok(!(await retenir('', 'x')).appris);
 });
+
+test('nuit : horaires, limite par nuit et compte rendu du matin (heure fournie)', () => {
+  const nuit = require('../lib/nuit');
+  const memoire = require('../lib/memoire');
+  const h = (s) => new Date(s); // heure locale
+  assert.ok(nuit.estLaNuit(h('2026-10-24T23:00:00')) && nuit.estLaNuit(h('2026-10-25T06:59:00')));
+  assert.ok(!nuit.estLaNuit(h('2026-10-25T07:00:00')) && !nuit.estLaNuit(h('2026-10-24T22:59:00')));
+  assert.strictEqual(nuit.nuitDe(h('2026-10-24T23:30:00')), '2026-10-24');
+  assert.strictEqual(nuit.nuitDe(h('2026-10-25T03:00:00')), '2026-10-24');
+  assert.strictEqual(nuit.nuitDe(h('2026-10-25T12:00:00')), null);
+
+  const jourT = { cochee: true, statut: 'en_attente' };
+  const nuitT = { ...jourT, nuit: true };
+  assert.ok(nuit.peutPartir(jourT, h('2026-10-24T14:00:00'), 0));
+  assert.ok(!nuit.peutPartir(nuitT, h('2026-10-24T14:00:00'), 0));
+  assert.ok(nuit.peutPartir(nuitT, h('2026-10-25T01:00:00'), 2));
+  assert.ok(!nuit.peutPartir(nuitT, h('2026-10-25T01:00:00'), 3));
+  assert.ok(!nuit.peutPartir({ ...nuitT, cochee: false }, h('2026-10-25T01:00:00'), 0));
+  assert.strictEqual(nuit.limite(), nuit.LIMITE_PAR_DEFAUT);
+  memoire.changerReglages({ taches_de_nuit_max: 5 });
+  assert.strictEqual(nuit.limite(), 5);
+
+  const taches = [
+    { titre: 'Faire A', nuit: true, statut: 'terminee', debut: h('2026-10-24T23:10:00').toISOString(), resultat: 'A est fait.' },
+    { titre: 'Faire B', nuit: true, statut: 'bloquee', debut: h('2026-10-25T02:00:00').toISOString(), resultat: 'Il manque une info.' },
+    { titre: 'De jour', statut: 'terminee', debut: h('2026-10-24T15:00:00').toISOString() },
+  ];
+  assert.strictEqual(nuit.parties(taches, '2026-10-24').length, 2);
+  assert.strictEqual(nuit.ecrireSiBesoin(h('2026-10-25T06:00:00'), [{ projet: 'Janova', taches }]), null);
+  const f = nuit.ecrireSiBesoin(h('2026-10-25T07:05:00'), [{ projet: 'Janova', taches }], ['mise en ligne de Janova']);
+  assert.ok(f.endsWith(path.join('comptes-rendus', '2026-10-25.md')));
+  const texte = fs.readFileSync(f, 'utf8');
+  for (const morceau of ['Faire A', 'terminée', 'A est fait.', 'bloquée', 'Ce qui attend ton avis', 'Tâche bloquée : Faire B', 'À valider : mise en ligne']) {
+    assert.ok(texte.includes(morceau), morceau);
+  }
+  assert.ok(!texte.includes('De jour'));
+  assert.strictEqual(nuit.ecrireSiBesoin(h('2026-10-25T08:00:00'), [{ projet: 'Janova', taches }]), null); // une seule fois
+  assert.strictEqual(nuit.ecrireSiBesoin(h('2026-10-26T08:00:00'), [{ projet: 'Janova', taches }]), null); // nuit sans tâche
+
+  assert.strictEqual(nuit.nonLu(h('2026-10-25T09:00:00')).jour, '2026-10-25');
+  nuit.marquerLu('2026-10-25');
+  assert.strictEqual(nuit.nonLu(h('2026-10-25T09:00:00')), null);
+});
