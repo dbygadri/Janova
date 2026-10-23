@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Janova</title>
+  <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <span class="logo">Janova</span>
+    <select id="projet" title="Changer de projet"></select>
+    <button id="projet-nouveau" class="secondaire">+ Nouveau projet</button>
+    <span id="projet-etat" class="etat"></span>
+    <button id="maj-bouton" class="secondaire maj" hidden></button>
+  </header>
+  <main>
+    <section id="zone-chat" class="panneau" style="flex-basis: 30%">
+      <div class="titre-panneau">
+        <span id="discussion-titre" class="titre-discussion">Chat avec Claude</span>
+        <span class="boutons-titre">
+          <button id="chat-historique" class="petit">Historique</button>
+          <button id="chat-nouveau" class="petit">Nouvelle</button>
+        </span>
+      </div>
+      <div id="historique" hidden>
+        <input id="historique-recherche" type="search" placeholder="Rechercher dans les discussions…">
+        <div class="onglets">
+          <button data-filtre="projet" class="onglet actif">Ce projet</button>
+          <button data-filtre="toutes" class="onglet">Toutes</button>
+          <button data-filtre="general" class="onglet">Questions générales</button>
+        </div>
+        <ul id="historique-liste"></ul>
+        <button id="historique-general" class="secondaire">Nouvelle question générale (sans projet)</button>
+      </div>
+      <div id="messages"></div>
+      <form id="chat-form">
+        <textarea id="chat-saisie" rows="3" placeholder="Écris à Claude… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
+        <button id="chat-bouton" type="submit">Envoyer</button>
+      </form>
+    </section>
+    <div class="separateur" data-cible="zone-chat"></div>
+    <section id="zone-terminal" class="panneau" style="flex: 1">
+      <div class="titre-panneau">
+        Terminal Claude Code
+        <button id="terminal-relancer" class="petit">Relancer</button>
+      </div>
+      <div id="terminal"></div>
+    </section>
+    <div class="separateur" data-cible="zone-taches" data-inverse="1"></div>
+    <section id="zone-taches" class="panneau" style="flex-basis: 26%">
+      <div class="titre-panneau">Tâches</div>
+      <p class="aide">Coche une tâche pour que Claude Code la fasse, même en ton absence.</p>
+      <form id="tache-form">
+        <input id="tache-titre" placeholder="Nouvelle tâche…" autocomplete="off">
+        <select id="tache-dossier" title="Partie du projet concernée"></select>
+        <button type="submit">Ajouter</button>
+      </form>
+      <ul id="taches"></ul>
+    </section>
+  </main>
+
+  <dialog id="dialogue-projet">
+    <form method="dialog" id="form-projet">
+      <h3>Nouveau projet</h3>
+      <label>Nom <input id="projet-nom" placeholder="mon-projet" required autocomplete="off"></label>
+      <label>En une phrase (facultatif) <input id="projet-description" autocomplete="off"></label>
+      <p class="aide">Janova crée le dossier sur ton PC et un dépôt GitHub privé.</p>
+      <p id="projet-erreur" class="texte-erreur"></p>
+      <div class="boutons">
+        <button value="annuler" class="secondaire" formnovalidate>Annuler</button>
+        <button id="projet-creer" value="creer">Créer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialogue-maj">
+    <h3 id="maj-titre">Nouvelle version de Janova</h3>
+    <div id="maj-contenu"></div>
+    <label id="maj-accord-garde-fous" class="alerte" hidden>
+      <input type="checkbox" id="maj-accord"> Cette version modifie les garde-fous de Janova (ce qui l'empêche de publier ou de déployer seule). Je l'ai demandé et j'accepte.
+    </label>
+    <pre id="maj-progres" hidden></pre>
+    <p id="maj-erreur" class="texte-erreur"></p>
+    <div class="boutons">
+      <button id="maj-revenir" class="lien" hidden>Revenir à la version précédente</button>
+      <span class="espace"></span>
+      <button id="maj-fermer" class="secondaire">Plus tard</button>
+      <button id="maj-action">Tester</button>
+    </div>
+  </dialog>
+
+  <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
