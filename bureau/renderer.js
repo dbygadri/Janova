@@ -446,6 +446,11 @@ function ligneTache(t) {
   const statut = t.statut === 'en_attente' && t.cochee ? 'prete' : t.statut;
   const meta = el('div', 'meta');
   meta.append(el('span', 'badge ' + statut, STATUTS[statut]));
+  if (t.proposee) {
+    const idee = el('span', 'badge idee', 'Idée de Claude');
+    idee.title = 'Proposée par Claude Code après une tâche. Coche-la si tu la veux, ✕ pour la rejeter.';
+    meta.append(idee);
+  }
   if (projet.groupe) meta.append(el('span', '', t.dossier || 'aucune partie choisie'));
   if (t.fin) meta.append(el('span', '', dateCourte(t.fin) + (t.duree_s ? ' · ' + Math.max(1, Math.round(t.duree_s / 60)) + ' min' : '')));
   li.append(ligne, meta);

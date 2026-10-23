@@ -226,3 +226,37 @@ test('nuit : horaires, limite par nuit et compte rendu du matin (heure fournie)'
   nuit.marquerLu('2026-10-25');
   assert.strictEqual(nuit.nonLu(h('2026-10-25T09:00:00')), null);
 });
+
+test('idées : lignes « IDÉE : » lues, filtrées et ajoutées non cochées', () => {
+  const idees = require('../lib/idees');
+  const taches = require('../lib/taches');
+  const lu = idees.lire([
+    'J’ai fait le travail.',
+    'DÉCISION : garder le vert',
+    '- **IDÉE** : Ajouter un bouton Exporter | Ajoute un bouton « Exporter » dans la liste des notes.',
+    'idee : Écrire la doc',
+    '* IDÉE : Mettre en ligne la version | Déploie sur Vercel.',
+    'IDÉE : Quatrième idée | trop',
+  ].join('\n'));
+  assert.strictEqual(lu.texte, 'J’ai fait le travail.\nDÉCISION : garder le vert');
+  assert.strictEqual(lu.idees.length, idees.MAX_PAR_TACHE);
+  assert.deepStrictEqual(lu.idees[0], { titre: 'Ajouter un bouton Exporter', instructions: 'Ajoute un bouton « Exporter » dans la liste des notes.' });
+  assert.deepStrictEqual(lu.idees[1], { titre: 'Écrire la doc', instructions: 'Écrire la doc' });
+
+  assert.ok(!idees.acceptable({ titre: 'Déployer le site', instructions: 'x' }));
+  assert.ok(!idees.acceptable({ titre: 'Nettoyer', instructions: 'Simplifie bureau/runner.js' }));
+  assert.ok(!idees.acceptable({ titre: 'Revoir les garde-fous', instructions: 'x' }));
+  assert.ok(!idees.acceptable({ titre: 'Revoir', instructions: 'Change deploiement.js' }));
+  assert.ok(idees.acceptable({ titre: 'Ajouter un bouton', instructions: 'Dans renderer.js' }));
+
+  const p = { id: 'idees', dossier: path.join(tmp, 'pi'), groupe: false };
+  taches.ajouter(p, { titre: 'Écrire la doc !', cochee: false });
+  const ajoutees = idees.ajouter(p, lu.idees, { id: 'abcd1234' });
+  assert.deepStrictEqual(ajoutees.map((t) => t.titre), ['Ajouter un bouton Exporter']); // doublon et mise en ligne ignorés
+  assert.strictEqual(ajoutees[0].cochee, false);
+  assert.strictEqual(ajoutees[0].proposee, true);
+  assert.strictEqual(ajoutees[0].origine, 'abcd1234');
+  for (let i = 0; i < 12; i++) idees.ajouter(p, [{ titre: 'Idée ' + i, instructions: 'x' }], { id: 'o' });
+  assert.strictEqual(taches.lire(p).filter((t) => t.proposee).length, idees.MAX_EN_ATTENTE);
+  assert.ok(idees.CONSIGNE.startsWith('IDÉE :') && /mise en ligne/.test(idees.CONSIGNE));
+});

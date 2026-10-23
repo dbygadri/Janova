@@ -32,7 +32,7 @@ function modifier(projet, fn) {
   return res;
 }
 
-function ajouter(projet, { titre, dossier, instructions, cochee }) {
+function ajouter(projet, { titre, dossier, instructions, cochee, proposee, origine }) {
   return modifier(projet, (taches) => {
     const t = {
       id: crypto.randomBytes(4).toString('hex'),
@@ -43,6 +43,8 @@ function ajouter(projet, { titre, dossier, instructions, cochee }) {
       statut: 'en_attente',
       creee: new Date().toISOString(),
     };
+    // Idée de tâche suivante proposée par Claude Code, et la tâche dont elle vient.
+    if (proposee) Object.assign(t, { proposee: true, origine: origine || null });
     taches.push(t);
     return t;
   });
