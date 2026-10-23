@@ -10,6 +10,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'janova-test-'));
 process.env.JANOVA_DONNEES = path.join(tmp, 'donnees');
 process.env.JANOVA_ETAT = path.join(tmp, 'etat');
 process.env.JANOVA_RACINE = path.join(tmp, 'racine');
+process.env.JANOVA_MEMOIRE = path.join(tmp, 'memoire');
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 const racine = path.join(__dirname, '..');
@@ -31,21 +32,28 @@ test('tous les fichiers JavaScript sont valides', () => {
 
 test('projets : groupe Alkestore et dépôts GitHub', () => {
   const projets = require('../lib/projets');
-  fs.mkdirSync(process.env.JANOVA_DONNEES, { recursive: true });
-  fs.writeFileSync(path.join(process.env.JANOVA_DONNEES, 'github.json'), JSON.stringify([{ name: 'alkestore-mvp' }, { name: 'Janova' }]));
+  fs.mkdirSync(process.env.JANOVA_MEMOIRE, { recursive: true });
+  fs.writeFileSync(path.join(process.env.JANOVA_MEMOIRE, 'github.json'), JSON.stringify([{ name: 'alkestore-mvp' }, { name: 'Janova' }]));
   const liste = projets.liste();
   assert.deepStrictEqual(liste.map((p) => p.nom), ['Alkestore', 'Janova']);
   assert.ok(liste[0].groupe && !liste[1].groupe);
   assert.strictEqual(projets.dossierDepot(liste[0], 'alkestore-mvp'), path.join(process.env.JANOVA_RACINE, 'alkestore-mvp'));
+  assert.strictEqual(liste[1].dossier, path.join(process.env.JANOVA_RACINE, 'Janova'));
+  // La mémoire ne garde que des chemins relatifs : elle ne dépend pas de la machine.
+  const enregistre = JSON.parse(fs.readFileSync(path.join(process.env.JANOVA_MEMOIRE, 'projets.json'), 'utf8'));
+  assert.ok(enregistre.projets.every((p) => !path.isAbsolute(p.dossier)));
+  projets.memoriserDernier('gh-janova');
+  assert.strictEqual(projets.dernier(), 'gh-janova');
 });
 
 test('tâches : ajouter, cocher, supprimer', () => {
   const taches = require('../lib/taches');
-  const p = { dossier: path.join(tmp, 'p'), groupe: false };
+  const p = { id: 'essai', dossier: path.join(tmp, 'p'), groupe: false };
   const t = taches.ajouter(p, { titre: 'Essai', cochee: false });
   assert.strictEqual(taches.lire(p)[0].statut, 'en_attente');
   taches.changer(p, t.id, { cochee: true });
   assert.strictEqual(taches.lire(p)[0].cochee, true);
+  assert.ok(fs.existsSync(path.join(process.env.JANOVA_MEMOIRE, 'projets', 'essai', 'taches.json')));
   taches.supprimer(p, t.id);
   assert.strictEqual(taches.lire(p).length, 0);
 });
@@ -55,8 +63,10 @@ test('discussions : enregistrer et rechercher', () => {
   const d = discussions.nouvelle('gh-janova', tmp);
   d.titre = 'Couleur du bouton';
   d.messages.push({ role: 'moi', texte: 'Mets le bouton en vert' });
-  discussions.enregistrer(d);
+  discussions.enregistrer(d, 'Janova');
   assert.strictEqual(discussions.liste({ recherche: 'vert' }).length, 1);
+  const md = fs.readFileSync(path.join(process.env.JANOVA_MEMOIRE, 'discussions', d.id + '.md'), 'utf8');
+  assert.ok(md.includes('[[Janova]]') && md.includes('Mets le bouton en vert'));
   assert.strictEqual(discussions.liste({ recherche: 'rouge' }).length, 0);
   assert.strictEqual(discussions.liste({ projet: null }).length, 0);
 });
@@ -76,4 +86,22 @@ test('cerveau : la porte fournit discuter et executerTache', () => {
   const cerveau = require('../cerveau');
   assert.strictEqual(typeof cerveau.discuter, 'function');
   assert.strictEqual(typeof cerveau.executerTache, 'function');
+});
+
+test('cerveau en couches : le noyau répond seul à ce qu\'il sait déjà faire', async () => {
+  const noyau = require('../cerveau/noyau');
+  assert.ok(noyau.disponible, 'le noyau Janova doit être livré avec le bureau');
+  const r = await noyau.demander('calcule 6 * 7');
+  assert.ok(r && r.reponse.includes('42'));
+  assert.strictEqual(await noyau.demander('ajoute une page de connexion au site'), null);
+  // Depuis le chat, le noyau n'agit jamais sur l'ordinateur.
+  assert.strictEqual(await noyau.demander('range mes téléchargements'), null);
+});
+
+test('mémoire : chaque échange est gardé pour apprendre', () => {
+  const memoire = require('../lib/memoire');
+  memoire.noterEchange({ projet: 'gh-janova', question: 'Bonjour', reponse: 'Bonjour !', couche: 'noyau' });
+  const dossier = path.join(process.env.JANOVA_MEMOIRE, 'echanges');
+  const lignes = fs.readdirSync(dossier).flatMap((f) => fs.readFileSync(path.join(dossier, f), 'utf8').trim().split('\n'));
+  assert.strictEqual(JSON.parse(lignes.pop()).couche, 'noyau');
 });

@@ -112,3 +112,4 @@ header .maj.dispo { border-color: var(--accent); color: var(--accent); }
 #dialogue-maj .espace { flex: 1; }
 button.lien { background: none; color: var(--discret); padding: 0; text-decoration: underline; }
 #dialogue-maj .boutons button { white-space: nowrap; }
+.msg .couche { margin-top: 6px; font-size: 11.5px; color: var(--vert); }

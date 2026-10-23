@@ -45,10 +45,10 @@ async function existe(ref) {
   try { await git('rev-parse', '--verify', '-q', ref + '^{commit}'); return true; } catch { return false; }
 }
 
-// Changements de « bureau/ » entre la version installée et une branche du dépôt.
+// Changements du bureau et du noyau entre la version installée et une branche du dépôt.
 async function changementsDepuis(installee, ref) {
   const plage = installee && (await existe(installee)) ? `${installee}..${ref}` : ref;
-  const sujets = (await git('log', '--format=%s', '-n', '30', plage, '--', 'bureau/')).split('\n').filter(Boolean);
+  const sujets = (await git('log', '--format=%s', '-n', '30', plage, '--', 'bureau/', 'janova/')).split('\n').filter(Boolean);
   const fichiers = installee && (await existe(installee))
     ? (await git('diff', '--name-only', installee, ref)).split('\n').filter(Boolean)
     : [];
@@ -89,6 +89,10 @@ async function preparer(progres = () => {}, refs) {
     const archive = path.join(VERSIONS, '.archive.tar');
     await git('archive', '-o', archive, candidat.sha, 'bureau');
     await lancer('tar', ['-xf', archive, '--strip-components=1', '-C', prep]);
+    // Le noyau Janova voyage avec le bureau : il sert de première couche du cerveau.
+    fs.mkdirSync(path.join(prep, 'noyau'));
+    await git('archive', '-o', archive, candidat.sha, 'janova');
+    await lancer('tar', ['-xf', archive, '-C', path.join(prep, 'noyau')]);
     fs.rmSync(archive, { force: true });
 
     const ancienne = installee && path.join(fs.realpathSync(ACTUELLE));

@@ -7,6 +7,7 @@ const projets = require('./lib/projets');
 const taches = require('./lib/taches');
 const discussions = require('./lib/discussions');
 const miseAJour = require('./lib/mise-a-jour');
+const memoire = require('./lib/memoire');
 const cerveau = require('./cerveau');
 
 const ENV = cerveau.ENV;
@@ -127,7 +128,7 @@ ipcMain.on('terminal:taille', (_e, { cols, rows }) => terminal && terminal.resiz
 // --- Discussions ---
 ipcMain.handle('discussions:nouvelle', (_e, projetId) => {
   const p = projetId ? projets.trouver(projetId) : null;
-  discussion = discussions.nouvelle(p && p.id, p ? p.dossier : os.homedir());
+  discussion = discussions.nouvelle(p && p.id);
   return discussion;
 });
 ipcMain.handle('discussions:ouvrir', (_e, id) => {
@@ -141,10 +142,13 @@ ipcMain.handle('discussions:reponse', (_e, { message, bloc, reponse }) => {
   const m = discussion && discussion.messages[message];
   if (!m) return;
   m.reponses = { ...(m.reponses || {}), [bloc]: reponse };
-  discussions.enregistrer(discussion);
+  enregistrerDiscussion(discussion);
 });
 
 // --- Chat avec le cerveau ---
+const nomProjet = (d) => { const p = d.projet && projets.trouver(d.projet); return p ? p.nom : null; };
+const enregistrerDiscussion = (d) => discussions.enregistrer(d, nomProjet(d));
+
 ipcMain.on('chat:envoyer', async (_e, message) => {
   if (chat || !discussion) return;
   const d = discussion;
@@ -155,7 +159,13 @@ ipcMain.on('chat:envoyer', async (_e, message) => {
   d.messages.push(reponse);
 
   chat = cerveau.discuter(
-    { message, session: d.session, dossier: fs.existsSync(d.cwd) ? d.cwd : os.homedir(), consigne: consigneChat(p) },
+    {
+      message,
+      session: d.session,
+      dossier: p && p.present ? p.dossier : os.homedir(),
+      consigne: consigneChat(p),
+      contexte: d.horsClaude || [],
+    },
     {
       surTexte: (t) => { reponse.texte += t; envoyer('chat:texte', t); },
       surNouveauMessage: () => {
@@ -165,12 +175,18 @@ ipcMain.on('chat:envoyer', async (_e, message) => {
       surOutil: (nom) => envoyer('chat:outil', nom),
     },
   );
-  const { session, erreur } = await chat.fin;
+  const { session, erreur, couche, niveaux } = await chat.fin;
   chat = null;
   d.session = session;
+  if (couche) reponse.couche = couche;
+  if (niveaux) reponse.niveaux = niveaux;
+  // Ce que le noyau a répondu seul est redonné à Claude la fois suivante, pour qu'il garde le fil.
+  if (couche === 'noyau') d.horsClaude = [...(d.horsClaude || []), { question: message, reponse: reponse.texte }];
+  if (couche === 'claude' && !erreur) d.horsClaude = [];
   if (!reponse.texte) d.messages.pop();
-  discussions.enregistrer(d);
-  envoyer('chat:fin', erreur);
+  else memoire.noterEchange({ projet: d.projet, discussion: d.id, question: message, reponse: reponse.texte, couche });
+  enregistrerDiscussion(d);
+  envoyer('chat:fin', erreur, couche);
 });
 ipcMain.on('chat:stop', () => chat && chat.arreter());
 
@@ -199,5 +215,9 @@ ipcMain.handle('taches:ajouter', (_e, t) => projet && taches.ajouter(projet, t))
 ipcMain.handle('taches:changer', (_e, id, champs) => projet && taches.changer(projet, id, champs));
 ipcMain.handle('taches:supprimer', (_e, id) => projet && taches.supprimer(projet, id));
 
-app.whenReady().then(creerFenetre);
+app.whenReady().then(() => {
+  memoire.lisezMoi();
+  for (const p of projets.liste()) memoire.noteProjet(p);
+  creerFenetre();
+});
 app.on('window-all-closed', () => app.quit());

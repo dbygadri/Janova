@@ -41,7 +41,6 @@ async function executer(p, t) {
       ? `Le dépôt « ${t.dossier || '(aucun)'} » n'est pas sur ce PC. Choisis un dépôt pour cette tâche.`
       : "Ce projet n'est pas encore un dépôt git sur ce PC. Ouvre-le une fois dans Janova.");
   }
-  projets.exclureDonnees(dossier);
   if (git(dossier, 'status', '--porcelain')) {
     return fin('bloquee', 'Ce dossier contient des modifications non enregistrées. Enregistre-les (commit) ou annule-les, puis recoche la tâche.');
   }

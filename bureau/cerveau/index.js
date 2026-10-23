@@ -1,20 +1,22 @@
 // La porte du cerveau : le reste de l'appli ne parle qu'à ce fichier.
 // Un cerveau fournit deux choses :
 //
-//   discuter({ message, session, dossier, consigne, outils }, { surTexte, surNouveauMessage, surOutil })
-//     → { arreter(), fin: Promise<{ session, erreur }> }
-//     Répond à un message du chat, au fil de l'eau. « session » permet de reprendre une discussion.
+//   discuter({ message, session, dossier, consigne, contexte }, { surTexte, surNouveauMessage, surOutil })
+//     → { arreter(), fin: Promise<{ session, erreur, couche }> }
+//     Répond à un message du chat, au fil de l'eau. « session » permet de reprendre une discussion ;
+//     « couche » dit qui a répondu (« noyau » ou « claude »).
 //
 //   executerTache({ consigne, dossier, interdits, journal, dureeMax })
 //     → Promise<{ reussi, resume }>
 //     Fait une tâche seul, sans personne devant l'écran, en respectant les interdits.
 //
-// Aujourd'hui le cerveau est Claude (et Claude Code). Pour brancher le noyau Janova,
-// il suffira d'écrire cerveau/janova.js avec les mêmes deux fonctions et de le choisir ici.
+// Par défaut, le cerveau est « en couches » : le noyau Janova d'abord, Claude pour le neuf.
+// Quand le noyau saura tout faire seul, il suffira d'ajuster couches.js ou d'en choisir un autre ici.
 
 const CERVEAUX = {
+  couches: () => require('./couches'),
   claude: () => require('./claude'),
 };
 
-const choisi = process.env.JANOVA_CERVEAU || 'claude';
-module.exports = (CERVEAUX[choisi] || CERVEAUX.claude)();
+const choisi = process.env.JANOVA_CERVEAU || 'couches';
+module.exports = (CERVEAUX[choisi] || CERVEAUX.couches)();

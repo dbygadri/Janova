@@ -173,7 +173,8 @@ function afficherClaude(vue, fini) {
     n++;
   }
   if (!fini && vue.outil) vue.el.append(el('div', 'etat', vue.outil));
-  if (!vue.message.texte && !fini) vue.el.append(el('div', 'etat', 'Claude réfléchit…'));
+  if (!vue.message.texte && !fini) vue.el.append(el('div', 'etat', 'Janova réfléchit…'));
+  if (fini && vue.message.couche === 'noyau') vue.el.append(el('div', 'couche', '⚡ Janova a répondu seule, sans Claude'));
   $('#messages').scrollTop = 1e9;
 }
 
@@ -290,8 +291,9 @@ janova.chat.surOutil((nom) => {
   actuel.outil = nom === 'Read' ? 'Claude lit un fichier…' : 'Claude cherche dans le projet…';
   afficherClaude(actuel, false);
 });
-janova.chat.surFin((erreur) => {
+janova.chat.surFin((erreur, couche) => {
   if (!actuel) return;
+  if (couche) actuel.message.couche = couche;
   if (!actuel.message.texte) {
     actuel.el.remove();
     discussion.messages.pop();

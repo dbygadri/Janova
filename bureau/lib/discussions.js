@@ -1,17 +1,16 @@
-// Historique des discussions avec Claude : un fichier par discussion.
+// Historique des discussions, dans la mémoire unique : un fichier par discussion,
+// et sa copie lisible en Markdown, reliée à la note de son projet (graphe façon Obsidian).
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
-const { DONNEES } = require('./projets');
+const memoire = require('./memoire');
 
-const DOSSIER = path.join(DONNEES, 'discussions');
-const fichier = (id) => path.join(DOSSIER, id.replace(/[^a-z0-9]/gi, '') + '.json');
+const DOSSIER = memoire.chemin('discussions');
+const base = (id) => memoire.chemin('discussions', String(id).replace(/[^a-z0-9]/gi, ''));
 
-function nouvelle(projetId, cwd) {
+function nouvelle(projetId) {
   return {
     id: crypto.randomBytes(6).toString('hex'),
     projet: projetId || null,
-    cwd,
     titre: 'Nouvelle discussion',
     creee: new Date().toISOString(),
     maj: new Date().toISOString(),
@@ -21,20 +20,28 @@ function nouvelle(projetId, cwd) {
 }
 
 function lire(id) {
-  try { return JSON.parse(fs.readFileSync(fichier(id), 'utf8')); } catch { return null; }
+  return memoire.lireJson(base(id) + '.json', null);
 }
 
-function enregistrer(d) {
+function enMarkdown(d, nomProjet) {
+  const lignes = [`# ${d.titre}`, '', `${nomProjet ? `Projet : [[${memoire.nomDeFichier(nomProjet)}]]` : 'Question générale'} · ${d.creee.slice(0, 10)}`, ''];
+  for (const m of d.messages) {
+    const qui = m.role === 'moi' ? 'Moi' : m.couche === 'noyau' ? 'Janova' : 'Claude';
+    lignes.push(`**${qui}** : ${m.texte}`, '');
+  }
+  return lignes.join('\n');
+}
+
+function enregistrer(d, nomProjet) {
   if (!d.messages.length) return;
   d.maj = new Date().toISOString();
-  fs.mkdirSync(DOSSIER, { recursive: true });
-  const f = fichier(d.id);
-  fs.writeFileSync(f + '.tmp', JSON.stringify(d, null, 1));
-  fs.renameSync(f + '.tmp', f);
+  memoire.ecrire(base(d.id) + '.json', JSON.stringify(d, null, 1));
+  memoire.ecrire(base(d.id) + '.md', enMarkdown(d, nomProjet));
 }
 
 function supprimer(id) {
-  fs.rmSync(fichier(id), { force: true });
+  fs.rmSync(base(id) + '.json', { force: true });
+  fs.rmSync(base(id) + '.md', { force: true });
 }
 
 // Liste résumée, la plus récente en premier. La recherche porte sur le titre et tout le texte.

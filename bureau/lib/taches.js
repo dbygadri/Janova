@@ -1,10 +1,11 @@
-// Lecture et écriture de la liste de tâches d'un projet (<dossier du projet>/.janova/taches.json),
-// partagée par l'appli et l'exécuteur.
+// Lecture et écriture de la liste de tâches d'un projet, rangée dans la mémoire unique
+// (projets/<id>/taches.json), partagée par l'appli et l'exécuteur.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const memoire = require('./memoire');
 
-const fichier = (projet) => path.join(projet.dossier, '.janova', 'taches.json');
+const fichier = (projet) => memoire.chemin('projets', projet.id, 'taches.json');
 
 function lire(projet) {
   try {

@@ -4,11 +4,16 @@ const path = require('path');
 const os = require('os');
 const { execFile } = require('child_process');
 
+const memoire = require('./memoire');
+
+// Propre à cette machine : versions installées, dernier projet ouvert, dossier où sont rangés les projets.
 const DONNEES = process.env.JANOVA_DONNEES || path.join(os.homedir(), '.local', 'share', 'janova-bureau');
 const ETAT = process.env.JANOVA_ETAT || path.join(os.homedir(), '.local', 'state', 'janova-bureau');
 const RACINE = process.env.JANOVA_RACINE || path.join(os.homedir(), 'projet');
-const FICHIER = path.join(DONNEES, 'projets.json');
-const CACHE_GITHUB = path.join(DONNEES, 'github.json');
+const MACHINE = path.join(DONNEES, 'machine.json');
+// Dans la mémoire unique : la liste des projets, avec des chemins relatifs à RACINE.
+const FICHIER = memoire.chemin('projets.json');
+const CACHE_GITHUB = memoire.chemin('github.json');
 const COMPTE = 'dbygadri';
 
 const DEPART = {
@@ -16,22 +21,13 @@ const DEPART = {
     {
       id: 'alkestore',
       nom: 'Alkestore',
-      dossier: RACINE,
+      dossier: '.',
       depots: ['alkestore-mvp', 'alkestore-admin', 'alkestore-landing', 'AlkeStore_mobileApp'],
     },
   ],
-  dernier: 'alkestore',
 };
 
-function lireJson(f, defaut) {
-  try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return defaut; }
-}
-function ecrireJson(f, d) {
-  fs.mkdirSync(path.dirname(f), { recursive: true });
-  const tmp = f + '.' + process.pid + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(d, null, 2) + '\n');
-  fs.renameSync(tmp, f);
-}
+const { lireJson, ecrireJson } = memoire;
 
 function lireConfig() {
   const c = lireJson(FICHIER, null);
@@ -47,9 +43,12 @@ function liste() {
   const projets = [...c.projets];
   for (const r of lireJson(CACHE_GITHUB, [])) {
     if (pris.has(r.name.toLowerCase())) continue;
-    projets.push({ id: 'gh-' + r.name.toLowerCase(), nom: r.name, dossier: path.join(RACINE, r.name), depots: [r.name] });
+    projets.push({ id: 'gh-' + r.name.toLowerCase(), nom: r.name, dossier: r.name, depots: [r.name] });
   }
-  return projets.map((p) => ({ ...p, groupe: p.depots.length > 1, present: fs.existsSync(p.dossier) }));
+  return projets.map((p) => {
+    const dossier = path.resolve(RACINE, p.dossier);
+    return { ...p, dossier, groupe: p.depots.length > 1, present: fs.existsSync(dossier) };
+  });
 }
 
 function trouver(id) {
@@ -57,13 +56,11 @@ function trouver(id) {
 }
 
 function dernier() {
-  const id = lireConfig().dernier;
+  const id = lireJson(MACHINE, {}).dernier;
   return id === undefined ? 'alkestore' : id;
 }
 function memoriserDernier(id) {
-  const c = lireConfig();
-  c.dernier = id;
-  ecrireJson(FICHIER, c);
+  ecrireJson(MACHINE, { ...lireJson(MACHINE, {}), dernier: id });
 }
 
 // Dossier de travail d'un dépôt du projet (le projet lui-même s'il n'a qu'un dépôt).
@@ -95,27 +92,14 @@ async function actualiserGithub() {
   return depots;
 }
 
-// Le dossier .janova (tâches, notes) reste sur le PC : jamais envoyé sur GitHub.
-function exclureDonnees(depot) {
-  const f = path.join(depot, '.git', 'info', 'exclude');
-  if (!fs.existsSync(path.join(depot, '.git'))) return;
-  const actuel = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '';
-  if (!actuel.split('\n').includes('.janova/')) {
-    fs.mkdirSync(path.dirname(f), { recursive: true });
-    fs.appendFileSync(f, (actuel && !actuel.endsWith('\n') ? '\n' : '') + '.janova/\n');
-  }
-}
-
 // Télécharge sur le PC les dépôts du projet qui n'y sont pas encore.
 async function preparer(p) {
   fs.mkdirSync(p.dossier, { recursive: true });
   for (const d of p.depots) {
     const dossier = dossierDepot(p, d);
-    if (!fs.existsSync(path.join(dossier, '.git'))) {
-      if (fs.existsSync(dossier) && fs.readdirSync(dossier).length) continue;
-      await gh(['repo', 'clone', `${COMPTE}/${d}`, dossier]);
-    }
-    exclureDonnees(dossier);
+    if (fs.existsSync(path.join(dossier, '.git'))) continue;
+    if (fs.existsSync(dossier) && fs.readdirSync(dossier).length) continue;
+    await gh(['repo', 'clone', `${COMPTE}/${d}`, dossier]);
   }
 }
 
@@ -132,7 +116,6 @@ async function creer(nom, description) {
   fs.mkdirSync(dossier, { recursive: true });
   fs.writeFileSync(path.join(dossier, 'README.md'), `# ${nom}\n${description ? '\n' + description + '\n' : ''}`);
   await git(dossier, ['init', '-q', '-b', 'main']);
-  exclureDonnees(dossier);
   await git(dossier, ['add', '-A']);
   await git(dossier, ['commit', '-q', '-m', 'Création du projet']);
   const args = ['repo', 'create', `${COMPTE}/${nom}`, '--private', '--source', dossier, '--push'];
@@ -142,4 +125,4 @@ async function creer(nom, description) {
   return trouver('gh-' + nom.toLowerCase());
 }
 
-module.exports = { DONNEES, ETAT, RACINE, ENV_GIT, liste, trouver, dernier, memoriserDernier, dossierDepot, actualiserGithub, preparer, creer, exclureDonnees };
+module.exports = { DONNEES, ETAT, RACINE, ENV_GIT, COMPTE, liste, trouver, dernier, memoriserDernier, dossierDepot, actualiserGithub, preparer, creer };
