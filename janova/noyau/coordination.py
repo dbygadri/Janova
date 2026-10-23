@@ -77,6 +77,7 @@ class PropositionRoutine:
     """Une habitude repérée par les yeux, que Janova propose de transformer en routine."""
 
     habitude: Habitude
+    quand: datetime  # l'heure de la proposition, sur l'horloge de vivre() : la routine part de là
 
     def decrire(self) -> str:
         h = self.habitude
@@ -366,7 +367,8 @@ class Janova:
             habitude = proposition.habitude
             if oui:
                 self.yeux.proposee(habitude)
-                routine = self.routines.ajouter(habitude.heure, list(range(7)), habitude.quoi)
+                routine = self.routines.ajouter(habitude.heure, list(range(7)), habitude.quoi,
+                                               maintenant=proposition.quand)
                 texte = f"C'est noté : {routine.decrire()}."
             else:
                 self.yeux.refusee(habitude)
@@ -400,7 +402,7 @@ class Janova:
         if not deja and maintenant - self._derniere_proposition_d_habitude >= timedelta(hours=1):
             for habitude in self.yeux.habitudes(maintenant):
                 if not self.routines.existe(habitude.quoi):
-                    proposition = PropositionRoutine(habitude)
+                    proposition = PropositionRoutine(habitude, maintenant)
                     self.en_attente.append(proposition)
                     self._derniere_proposition_d_habitude = maintenant
                     messages.append(proposition.decrire()[0].upper() + proposition.decrire()[1:] + " (oui / non)")
