@@ -17,11 +17,13 @@ Sécurité :
 Tout est rangé dans la mémoire unique, dossier noyau/curiosite/ :
     sujets.json         les sujets et leur intérêt
     AAAA-MM-JJ.jsonl    les découvertes du jour (une par ligne)
+    connaissances.json  une fiche par sujet : tout ce qui a été appris, et où
     etat.json           les sites à laisser tranquilles pour l'instant
 
 Pour le bureau (une recherche, avec son avancement en lignes JSON au fil de l'eau) :
     python3 -m janova.curiosite
     python3 -m janova.curiosite --sujets | --ecarter "sujet" | --suggerer "sujet"
+    python3 -m janova.curiosite --connaissances ["sujet"]
 """
 
 import getpass
@@ -50,6 +52,7 @@ RECUL_MAX = 6 * 3600.0  # … et au plus six heures
 RECENT = timedelta(hours=12)  # un sujet exploré il y a moins de 12 h attend son tour
 SUJETS_MAX = 150
 LIGNES_MAX = 5
+FICHE_MAX = 30  # au plus 30 lignes apprises et 30 sources par fiche (les plus récentes)
 VERROU_PERIME = timedelta(minutes=15)
 
 # Le cap de Janova : les sujets de départ, et les racines de mots qui disent « c'est proche du cap ».
@@ -510,6 +513,49 @@ def _ecrire(fichier: Path, texte: str) -> None:
     tmp.replace(fichier)
 
 
+# --- Les fiches de connaissances : une par sujet, enrichie à chaque exploration. ---
+
+def lire_connaissances(fichier: Path) -> dict[str, dict]:
+    try:
+        donnees = json.loads(fichier.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {c: f for c, f in donnees.items() if isinstance(f, dict)} if isinstance(donnees, dict) else {}
+
+
+def fusionner(fiche: dict | None, nom: str, c: str, appris: list[str], sources_lues: list[dict], quand: str) -> dict:
+    """Ajoute à la fiche ce qui est nouveau : les lignes pas encore apprises (même cle()) et les sources
+    pas encore citées (même adresse). Garde les FICHE_MAX plus récentes de chaque."""
+    fiche = dict(fiche or {"nom": nom, "cle": c, "appris": [], "sources": [], "explorations": 0, "premiere": quand})
+    fiche["nom"], fiche["cle"] = nom, c
+    connues = {cle(l) for l in fiche.get("appris") or []}
+    lignes = list(fiche.get("appris") or [])
+    for l in appris:
+        if isinstance(l, str) and cle(l) and cle(l) not in connues:
+            connues.add(cle(l))
+            lignes.append(l)
+    adresses = {s.get("adresse") for s in fiche.get("sources") or []}
+    liste = list(fiche.get("sources") or [])
+    for s in sources_lues:
+        if s.get("adresse") and s["adresse"] not in adresses:
+            adresses.add(s["adresse"])
+            liste.append({"adresse": s["adresse"], "titre": s.get("titre", ""), "source": s.get("source", "")})
+    fiche["appris"], fiche["sources"] = lignes[-FICHE_MAX:], liste[-FICHE_MAX:]
+    fiche["explorations"] = fiche.get("explorations", 0) + 1
+    fiche.setdefault("premiere", quand)
+    fiche["derniere"] = quand
+    return fiche
+
+
+def enrichir_fiche(fichier: Path, nom: str, c: str, appris: list[str], sources_lues: list[dict], quand: str) -> dict:
+    """Relit le fichier juste avant d'écrire (rien de ce qu'un autre a écrit entre-temps n'est perdu),
+    fusionne, puis écrit d'un coup."""
+    fiches = lire_connaissances(fichier)
+    fiches[c] = fusionner(fiches.get(c), nom, c, appris, sources_lues, quand)
+    _ecrire(fichier, json.dumps(fiches, ensure_ascii=False, indent=1) + "\n")
+    return fiches[c]
+
+
 def reste_a_faire(memoire: Path) -> list[tuple[str, str]]:
     """Les mots-clés du « Reste à faire » des projets. Rend (mot, projet).
     Seuls les mots ordinaires en minuscules sont gardés : pas de nom propre, de chemin ni de nom de code."""
@@ -640,6 +686,8 @@ def rechercher(dossier_noyau: Path, memoire: Path | None = None, toile: Toile | 
     journal.parent.mkdir(parents=True, exist_ok=True)
     with journal.open("a", encoding="utf-8") as f:
         f.write(json.dumps(decouverte, ensure_ascii=False) + "\n")
+    # Ce qui est appris s'ajoute à la fiche du sujet (le texte lu reste une donnée, rien d'autre).
+    enrichir_fiche(dossier / "connaissances.json", sujet["nom"], sujet["cle"], decouverte["appris"], adresses, horodatage)
     signaler({"etape": "resultat", "decouverte": decouverte})
     return decouverte
 
@@ -691,6 +739,13 @@ def main(argv: list[str] | None = None) -> int:
         carnet.suggerer(nom, quand)
         carnet.enregistrer()
         dire({"ok": True, "sujet": nom})
+        return 0
+    if argv[:1] == ["--connaissances"]:
+        fiches = lire_connaissances(dossier_curiosite(dossier_noyau) / "connaissances.json")
+        if len(argv) > 1:
+            dire({"fiche": fiches.get(cle(argv[1]))})
+        else:
+            dire({"fiches": sorted(fiches.values(), key=lambda f: str(f.get("derniere") or ""), reverse=True)})
         return 0
     verrou = _verrou(dossier_curiosite(dossier_noyau))
     if not verrou:

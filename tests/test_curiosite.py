@@ -311,7 +311,7 @@ class TestRecherche(unittest.TestCase):
     def test_aucune_tache_ni_reflexe_cree(self):
         curiosite.rechercher(self.noyau, toile=self.toile(), quand=QUAND, prives=set())
         fichiers = {f.name for f in self.noyau.rglob("*") if f.is_file()}
-        self.assertEqual(fichiers, {"sujets.json", "etat.json", "2026-10-24.jsonl"})
+        self.assertEqual(fichiers, {"sujets.json", "etat.json", "2026-10-24.jsonl", "connaissances.json"})
 
     def test_resume_par_ollama_si_disponible(self):
         class FauxOllama:
@@ -364,7 +364,91 @@ class TestRecherche(unittest.TestCase):
         d = curiosite.rechercher(self.noyau, toile=Toile(ouvrir=ouvrir_piege, dormir=lambda s: None), quand=QUAND, prives=set())
         self.assertTrue(any("rm -rf" in l for l in d["appris"]))  # gardé tel quel, comme du texte
         fichiers = {f.name for f in self.noyau.rglob("*") if f.is_file()}
-        self.assertEqual(fichiers, {"sujets.json", "etat.json", "2026-10-24.jsonl"})
+        self.assertEqual(fichiers, {"sujets.json", "etat.json", "2026-10-24.jsonl", "connaissances.json"})
+
+
+class TestConnaissances(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.noyau = Path(self.tmp.name) / "noyau"
+        self.fichier = self.noyau / "curiosite" / "connaissances.json"
+        carnet = Carnet(self.noyau / "curiosite" / "sujets.json")
+        carnet.suggerer("agent autonome", QUAND.isoformat())
+        carnet.enregistrer()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_fusion_sans_doublon(self):
+        src = [{"adresse": "https://a.org/1", "titre": "Un", "source": "A"}]
+        f = curiosite.fusionner(None, "Agent autonome", "agent autonome", ["Il agit seul.", "Il apprend."], src, "t1")
+        self.assertEqual((f["explorations"], f["premiere"], f["derniere"]), (1, "t1", "t1"))
+        # « il agit seul ! » a la même cle() que « Il agit seul. » : ce n'est pas une ligne nouvelle.
+        f = curiosite.fusionner(f, "Agent autonome", "agent autonome", ["il agit seul !", "Il dort peu."],
+                                src + [{"adresse": "https://a.org/2", "titre": "Deux", "source": "A"}], "t2")
+        self.assertEqual(f["appris"], ["Il agit seul.", "Il apprend.", "Il dort peu."])
+        self.assertEqual([s["adresse"] for s in f["sources"]], ["https://a.org/1", "https://a.org/2"])
+        self.assertEqual((f["explorations"], f["premiere"], f["derniere"]), (2, "t1", "t2"))
+
+    def test_trente_lignes_et_trente_sources_au_plus_les_plus_recentes(self):
+        f = None
+        for i in range(40):
+            f = curiosite.fusionner(f, "x", "x", [f"Ligne numéro {i} apprise"], [{"adresse": f"https://a.org/{i}"}], f"t{i}")
+        self.assertEqual(len(f["appris"]), 30)
+        self.assertEqual(len(f["sources"]), 30)
+        self.assertEqual(f["appris"][0], "Ligne numéro 10 apprise")
+        self.assertEqual(f["appris"][-1], "Ligne numéro 39 apprise")
+        self.assertEqual(f["sources"][-1]["adresse"], "https://a.org/39")
+
+    def test_recherche_enrichit_la_fiche_du_sujet(self):
+        toile = lambda: Toile(ouvrir=faux_internet(), dormir=lambda s: None)
+        d = curiosite.rechercher(self.noyau, toile=toile(), quand=QUAND, prives=set())
+        fiche = curiosite.lire_connaissances(self.fichier)["agent autonome"]
+        self.assertEqual(fiche["nom"], "agent autonome")
+        self.assertEqual(fiche["appris"], d["appris"])
+        self.assertIn("https://arxiv.org/abs/2601.00001v1", [s["adresse"] for s in fiche["sources"]])
+        # Même sujet relu plus tard, mêmes pages : rien de nouveau n'est ajouté, mais l'exploration est comptée.
+        plus_tard = QUAND + timedelta(hours=13)
+        carnet = Carnet(self.noyau / "curiosite" / "sujets.json")
+        carnet.suggerer("agent autonome", plus_tard.isoformat())
+        carnet.enregistrer()
+        curiosite.rechercher(self.noyau, toile=toile(), quand=plus_tard, prives=set())
+        fiche2 = curiosite.lire_connaissances(self.fichier)["agent autonome"]
+        self.assertEqual(fiche2["appris"], fiche["appris"])
+        self.assertEqual(len(fiche2["sources"]), len(fiche["sources"]))
+        self.assertEqual(fiche2["explorations"], 2)
+        self.assertEqual(fiche2["derniere"], plus_tard.isoformat(timespec="seconds"))
+        # Le journal du jour reste tel quel.
+        self.assertTrue((self.noyau / "curiosite" / "2026-10-24.jsonl").exists())
+
+    def test_relecture_avant_ecriture_rien_n_est_perdu(self):
+        # Pendant la recherche, une autre fiche est écrite (par une autre machine, par exemple) : elle reste.
+        ouvrir = faux_internet()
+
+        def ouvrir_et_ecrire(requete, timeout):
+            if "arxiv" in requete.full_url:
+                curiosite.enrichir_fiche(self.fichier, "robots", "robots", ["Les robots jardinent."], [], "avant")
+            return ouvrir(requete, timeout)
+
+        curiosite.rechercher(self.noyau, toile=Toile(ouvrir=ouvrir_et_ecrire, dormir=lambda s: None), quand=QUAND, prives=set())
+        fiches = curiosite.lire_connaissances(self.fichier)
+        self.assertEqual(set(fiches), {"robots", "agent autonome"})
+        self.assertEqual(fiches["robots"]["appris"], ["Les robots jardinent."])
+
+    def test_commande_connaissances(self):
+        import contextlib
+        import os
+        from unittest import mock
+        curiosite.enrichir_fiche(self.fichier, "Agent autonome", "agent autonome", ["Il agit seul."], [], "t1")
+        sortie = io.StringIO()
+        with mock.patch.dict(os.environ, {"JANOVA_MEMOIRE": self.tmp.name}), contextlib.redirect_stdout(sortie):
+            curiosite.main(["--connaissances"])
+            curiosite.main(["--connaissances", "Agent Autonome"])
+            curiosite.main(["--connaissances", "inconnu"])
+        toutes, une, aucune = [json.loads(l) for l in sortie.getvalue().splitlines()]
+        self.assertEqual([f["cle"] for f in toutes["fiches"]], ["agent autonome"])
+        self.assertEqual(une["fiche"]["appris"], ["Il agit seul."])
+        self.assertIsNone(aucune["fiche"])
 
 
 if __name__ == "__main__":
