@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('janova', {
   chat: {
     envoyer: (m) => ipcRenderer.send('chat:envoyer', m),
     stop: () => ipcRenderer.send('chat:stop'),
+    retenir: appel('chat:retenir'),
     surTexte: ecouter('chat:texte'),
     surNouveauMessage: ecouter('chat:nouveau-message'),
     surOutil: ecouter('chat:outil'),

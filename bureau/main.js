@@ -11,6 +11,7 @@ const memoire = require('./lib/memoire');
 const journal = require('./lib/journal');
 const deploiement = require('./lib/deploiement');
 const voix = require('./lib/voix');
+const reflexes = require('./lib/reflexes');
 const { liens } = require('./lib/liens');
 const { sujetTelephone } = require('./lib/notifier');
 const cerveau = require('./cerveau');
@@ -182,6 +183,8 @@ ipcMain.on('chat:envoyer', async (_e, message) => {
   d.messages.push({ role: 'moi', texte: message });
   const reponse = { role: 'claude', texte: '' };
   d.messages.push(reponse);
+  // Ce qu'il faut savoir ensuite pour décider si la réponse peut devenir un réflexe.
+  const avant = { session: d.session, contexte: d.horsClaude || [], outils: false };
 
   chat = cerveau.discuter(
     {
@@ -197,7 +200,7 @@ ipcMain.on('chat:envoyer', async (_e, message) => {
         if (reponse.texte && !reponse.texte.endsWith('\n\n')) reponse.texte += '\n\n';
         envoyer('chat:nouveau-message');
       },
-      surOutil: (nom) => envoyer('chat:outil', nom),
+      surOutil: (nom) => { avant.outils = true; envoyer('chat:outil', nom); },
     },
   );
   const { session, erreur, couche, niveaux } = await chat.fin;
@@ -208,12 +211,26 @@ ipcMain.on('chat:envoyer', async (_e, message) => {
   // Ce que le noyau a répondu seul est redonné à Claude la fois suivante, pour qu'il garde le fil.
   if (couche === 'noyau') d.horsClaude = [...(d.horsClaude || []), { question: message, reponse: reponse.texte }];
   if (couche === 'claude' && !erreur) d.horsClaude = [];
+  // Une réponse de Claude qui tient seule peut être retenue par le noyau, si l'utilisateur le veut.
+  if (couche === 'claude' && !erreur && reflexes.peutRetenir({ question: message, reponse: reponse.texte, ...avant })) {
+    reponse.retenable = true;
+  }
   if (!reponse.texte) d.messages.pop();
   else memoire.noterEchange({ projet: d.projet, discussion: d.id, question: message, reponse: reponse.texte, couche });
   enregistrerDiscussion(d);
-  envoyer('chat:fin', erreur, couche);
+  envoyer('chat:fin', erreur, couche, !!reponse.retenable);
 });
 ipcMain.on('chat:stop', () => chat && chat.arreter());
+// « Retenir » : le noyau apprend la réponse de Claude, pour répondre seul la prochaine fois.
+ipcMain.handle('chat:retenir', async (_e, index) => {
+  const d = discussion;
+  const m = d && d.messages[index];
+  const q = d && d.messages[index - 1];
+  if (!m || !m.retenable || !q || q.role !== 'moi') return { appris: false, erreur: 'Cette réponse ne peut pas être retenue.' };
+  const r = await reflexes.retenir(q.texte, m.texte);
+  if (r.appris) { m.retenu = true; enregistrerDiscussion(d); }
+  return r;
+});
 
 // --- Mises à jour de Janova elle-même ---
 ipcMain.handle('maj:etat', erreurs(() => miseAJour.etat()));

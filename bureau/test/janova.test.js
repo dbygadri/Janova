@@ -153,3 +153,33 @@ test('mise en ligne : résumé de ce qui part, feu vert obligatoire', () => {
   const ordinaire = taches.ajouter(p, { titre: 'x', feuVert: 'oui', type: 'deploiement' });
   assert.ok(!ordinaire.feuVert && !ordinaire.type);
 });
+
+test('réflexes : seule une réponse courte, sans contexte et durable peut être retenue', () => {
+  const { peutRetenir } = require('../lib/reflexes');
+  const ok = { question: "C'est quoi un serveur DNS ?", reponse: "Un annuaire d'Internet." };
+  assert.ok(peutRetenir(ok));
+  assert.ok(!peutRetenir({ ...ok, question: 'q'.repeat(120) }));
+  assert.ok(!peutRetenir({ ...ok, reponse: 'r'.repeat(1500) }));
+  assert.ok(!peutRetenir({ ...ok, question: '' }));
+  assert.ok(!peutRetenir({ ...ok, session: 'abc' }));
+  assert.ok(!peutRetenir({ ...ok, contexte: [{ question: 'a', reponse: 'b' }] }));
+  assert.ok(!peutRetenir({ ...ok, outils: true }));
+  for (const question of ['Quelle heure est-il ?', "On est quel jour aujourd'hui ?", 'Quelle météo demain ?',
+    'Le prix du pain ?', "L'actualité en ce moment ?", "Quel est l'âge de Macron ?"]) {
+    assert.ok(!peutRetenir({ ...ok, question }), question);
+  }
+  assert.ok(!peutRetenir({ ...ok, reponse: 'Il fait 20 degrés en ce moment.' }));
+  assert.ok(peutRetenir({ ...ok, question: 'Que veut dire « prioritaire » ?' })); // « prix » n'est pas un mot entier ici
+});
+
+test('réflexes : « Retenir » fait apprendre la réponse au noyau, qui la sert ensuite seul', async () => {
+  const { retenir } = require('../lib/reflexes');
+  const noyau = require('../cerveau/noyau');
+  if (!noyau.disponible) return;
+  const question = 'Que veut dire RAM ?';
+  assert.strictEqual(await noyau.demander(question), null);
+  assert.deepStrictEqual(await retenir(question, 'La mémoire vive de l’ordinateur.'), { appris: true });
+  const r = await noyau.demander('que veut dire ram');
+  assert.strictEqual(r.reponse, 'La mémoire vive de l’ordinateur.');
+  assert.ok(!(await retenir('', 'x')).appris);
+});

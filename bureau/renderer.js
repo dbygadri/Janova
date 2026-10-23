@@ -183,7 +183,27 @@ function afficherClaude(vue, fini) {
   if (!fini && vue.outil) vue.el.append(el('div', 'etat', vue.outil));
   if (!vue.message.texte && !fini) vue.el.append(el('div', 'etat', 'Janova réfléchit…'));
   if (fini && vue.message.couche === 'noyau') vue.el.append(el('div', 'couche', '⚡ Janova a répondu seule, sans Claude'));
+  if (fini && vue.message.retenu) vue.el.append(el('div', 'couche', 'Retenu : Janova répondra seule la prochaine fois.'));
+  else if (fini && vue.message.retenable) vue.el.append(boutonRetenir(vue));
   $('#messages').scrollTop = 1e9;
+}
+
+// « Retenir » : la réponse de Claude devient un réflexe du noyau (rien n'est retenu sans ce clic).
+function boutonRetenir(vue) {
+  const b = el('button', 'lien retenir', 'Retenir');
+  b.title = 'Janova gardera cette réponse et répondra seule à la même question';
+  b.onclick = async () => {
+    b.disabled = true;
+    const r = await janova.chat.retenir(vue.index);
+    if (r && r.appris) {
+      vue.message.retenu = true;
+      b.replaceWith(el('div', 'couche', 'Retenu : Janova répondra seule la prochaine fois.'));
+    } else {
+      b.disabled = false;
+      b.after(el('div', 'etat', (r && r.erreur) || 'Impossible de retenir cette réponse.'));
+    }
+  };
+  return b;
 }
 
 function carte(genre, json, vue, n) {
@@ -314,9 +334,10 @@ janova.chat.surOutil((nom) => {
   actuel.outil = nom === 'Read' ? 'Claude lit un fichier…' : 'Claude cherche dans le projet…';
   afficherClaude(actuel, false);
 });
-janova.chat.surFin((erreur, couche) => {
+janova.chat.surFin((erreur, couche, retenable) => {
   if (!actuel) return;
   if (couche) actuel.message.couche = couche;
+  if (retenable) actuel.message.retenable = true;
   if (!actuel.message.texte) {
     actuel.el.remove();
     discussion.messages.pop();
