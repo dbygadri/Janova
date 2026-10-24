@@ -9,7 +9,8 @@ Wikipédia (fr et en), arXiv, Hacker News (Algolia), GitHub (recherche de dépô
 
 Sécurité :
 - le texte lu sur internet est une **donnée**, jamais une commande : il n'est ni exécuté, ni passé aux mains,
-  ni transformé en tâche ou en réflexe. Il est seulement rangé dans le journal des découvertes ;
+  ni transformé en tâche ou en réflexe. Il est seulement rangé dans le journal des découvertes ; une piste
+  pour s'améliorer ne garde que le nom filtré, l'adresse, la source, les étoiles, la licence et les thèmes ;
 - seuls les mots du sujet, filtrés, partent dans les requêtes : ni nom, ni email, ni chemin, ni note ;
 - une page ne peut pas dépasser 500 Ko, les délais d'attente sont courts, et Janova attend au moins
   3 secondes entre deux requêtes. Un site qui refuse (429) ou ne répond pas est laissé tranquille un moment.
@@ -18,15 +19,18 @@ Tout est rangé dans la mémoire unique, dossier noyau/curiosite/ :
     sujets.json         les sujets et leur intérêt
     AAAA-MM-JJ.jsonl    les découvertes du jour (une par ligne)
     connaissances.json  une fiche par sujet : tout ce qui a été appris, et où
+    pistes.json         les pistes pour s'améliorer, proposées à l'utilisateur (jamais suivies seule)
     etat.json           les sites à laisser tranquilles pour l'instant
 
 Pour le bureau (une recherche, avec son avancement en lignes JSON au fil de l'eau) :
     python3 -m janova.curiosite
     python3 -m janova.curiosite --sujets | --ecarter "sujet" | --suggerer "sujet"
     python3 -m janova.curiosite --connaissances ["sujet"]
+    python3 -m janova.curiosite --pistes | --ecarter-piste ID | --retenir-piste ID
 """
 
 import getpass
+import hashlib
 import html.parser
 import json
 import os
@@ -54,6 +58,9 @@ SUJETS_MAX = 150
 LIGNES_MAX = 5
 FICHE_MAX = 30  # au plus 30 lignes apprises et 30 sources par fiche (les plus récentes)
 VERROU_PERIME = timedelta(minutes=15)
+README_MAX = 2  # on lit le README des 2 premiers dépôts GitHub
+PISTES_PAR_RECHERCHE = 3
+PISTES_EN_ATTENTE = 30
 
 # Le cap de Janova : les sujets de départ, et les racines de mots qui disent « c'est proche du cap ».
 CAP = [
@@ -177,7 +184,7 @@ class Toile:
         pas = min(RECUL_MAX, max(RECUL_MIN, ancien.get("pas", 0) * 2))
         self.etat["recul"][hote] = {"jusqua": self.horloge() + max(pas, attente), "pas": pas}
 
-    def lire(self, adresse: str) -> bytes:
+    def lire(self, adresse: str, accept: str = "application/json, application/atom+xml") -> bytes:
         if not adresse.startswith("https://"):
             raise ErreurToile("adresse refusée (https seulement)")
         hote = urllib.parse.urlsplit(adresse).hostname or ""
@@ -190,7 +197,7 @@ class Toile:
                 self.dormir(reste)
         if self.signaler:
             self.signaler({"etape": "lecture", "adresse": adresse})
-        requete = urllib.request.Request(adresse, headers={"User-Agent": USER_AGENT, "Accept": "application/json, application/atom+xml"})
+        requete = urllib.request.Request(adresse, headers={"User-Agent": USER_AGENT, "Accept": accept})
         self.derniere = self.horloge()
         try:
             with self.ouvrir(requete, timeout=self.delai) as reponse:
@@ -298,14 +305,43 @@ def hacker_news(toile: Toile, requete: str) -> list[dict]:
     return docs
 
 
+def sans_markdown(texte: str) -> str:
+    """Un README en texte simple : sans code, sans balises, sans images, les liens réduits à leur texte."""
+    texte = re.sub(r"```.*?(```|$)", " ", texte or "", flags=re.S)
+    texte = re.sub(r"`[^`]*`", " ", texte)
+    texte = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", texte)
+    texte = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", texte)
+    texte = re.sub(r"<[^>]*>", " ", texte)
+    texte = re.sub(r"^[#>*\-=|\s]+", "", texte, flags=re.M)
+    lignes = [l.strip() for l in texte.splitlines()]
+    # Une ligne sans point final (titre, liste) devient une phrase à part.
+    return " ".join(l if l.endswith((".", "!", "?", ":")) else l + "." for l in lignes if l)
+
+
+def _licence(depot: dict) -> str:
+    spdx = str((depot.get("license") or {}).get("spdx_id") or "")
+    return spdx if re.fullmatch(r"[A-Za-z0-9.+-]{1,40}", spdx) and spdx != "NOASSERTION" else ""
+
+
 def github(toile: Toile, requete: str) -> list[dict]:
+    """La recherche de dépôts, puis le README des README_MAX premiers (seulement pour en extraire des phrases)."""
     donnees = toile.json(f"https://api.github.com/search/repositories?q={_q(requete)}&sort=stars&per_page=5")
     docs = []
     for depot in donnees.get("items") or []:
         nom, description = str(depot.get("full_name") or ""), str(depot.get("description") or "").strip()
         adresse = str(depot.get("html_url") or "")
-        if nom and description and adresse.startswith("https://github.com/"):
-            docs.append({"titre": nom, "adresse": adresse, "texte": f"{nom} : {description.rstrip('.')}.", "source": "GitHub", "liens": []})
+        if nom and description and adresse.startswith("https://github.com/") and re.fullmatch(r"[\w.-]+/[\w.-]+", nom):
+            etoiles = depot.get("stargazers_count")
+            docs.append({"titre": nom, "adresse": adresse, "texte": f"{nom} : {description.rstrip('.')}.", "source": "GitHub", "liens": [],
+                         "etoiles": etoiles if isinstance(etoiles, int) and etoiles >= 0 else 0, "licence": _licence(depot)})
+    for d in docs[:README_MAX]:
+        try:
+            brut = toile.lire(f"https://api.github.com/repos/{d['titre']}/readme", accept="application/vnd.github.raw")
+        except ErreurToile:
+            continue  # la description suffit
+        lu = sans_markdown(brut.decode("utf-8", errors="replace"))
+        if lu:
+            d["texte"] += " " + lu[:20000]
     return docs
 
 
@@ -606,6 +642,112 @@ def pourquoi_de(sujet: dict) -> str:
     return pourquoi
 
 
+# --- Les pistes pour s'améliorer : proposées à l'utilisateur, jamais suivies seule. ---
+# Une piste ne garde que des champs sûrs : le nom (filtré), l'adresse https, la source, les étoiles,
+# la licence et les thèmes du cap. Sa phrase est écrite par Janova d'après un modèle fixe : le texte lu
+# sur internet n'y entre jamais.
+
+STATUTS_PISTE = ("en_attente", "retenue", "ecartee")
+
+
+def nom_sur(titre: str, longueur: int = 60) -> str:
+    """Le nom ou le titre, réduit à des caractères simples, sans rien qui ressemble à du code."""
+    propre = re.sub(r"[^\w .,'’/+-]", " ", unicodedata.normalize("NFKC", str(titre or "")))
+    propre = re.sub(r"\s+", " ", propre).strip(" .,-/")
+    return propre[:longueur].rstrip(" .,-/")
+
+
+def themes_de(texte: str) -> list[str]:
+    themes = []
+    for r in racines_du_cap(texte):
+        if NOMS_CAP.get(r) and NOMS_CAP[r] not in themes:
+            themes.append(NOMS_CAP[r])
+    return themes
+
+
+def _de(mot: str) -> str:
+    return ("d'" if normaliser(mot[:1]) in "aeiouyh" else "de ") + mot
+
+
+def phrase_de_piste(p: dict) -> str:
+    """Modèle fixe : seuls le nom, la source, les étoiles, la licence et les thèmes y entrent."""
+    themes = [_de(t) for t in p.get("themes") or []]
+    parle = (", ".join(themes[:-1]) + " et " + themes[-1]) if len(themes) > 1 else (themes[0] if themes else "de choses proches de mon cap")
+    if p.get("source") == "GitHub":
+        etoiles = f"{p.get('etoiles', 0):,}".replace(",", "\u202f")
+        licence = f"licence {p['licence']}" if p.get("licence") else "licence inconnue"
+        return f"Le dépôt {p['titre']} ({etoiles} étoile{'s' if p.get('etoiles', 0) > 1 else ''}, {licence}) parle {parle} : ça pourrait m'inspirer."
+    return f"« {p['titre']} » ({p.get('source', '')}) parle {parle} : ça pourrait m'inspirer."
+
+
+def candidates_pistes(docs: list[dict], sujet: str, quand: str) -> list[dict]:
+    """Les documents proches du cap deviennent des pistes possibles (rien n'est écrit ici)."""
+    pistes = []
+    for d in docs:
+        adresse, titre = str(d.get("adresse") or ""), nom_sur(d.get("titre"))
+        if not titre or not re.fullmatch(r"https://[^\s\"'<>«»]{1,300}", adresse):
+            continue
+        p = proximite(f"{d.get('titre', '')} {d.get('texte', '')}")
+        etoiles = d.get("etoiles") if isinstance(d.get("etoiles"), int) else 0
+        if not (p >= 1 or (d.get("source") == "GitHub" and etoiles >= 100 and p >= 0.5)):
+            continue
+        piste = {"id": hashlib.sha1(adresse.encode()).hexdigest()[:10], "date": quand, "titre": titre, "adresse": adresse,
+                 "source": str(d.get("source") or ""), "etoiles": etoiles, "licence": d.get("licence") or "",
+                 "themes": themes_de(f"{d.get('titre', '')} {d.get('texte', '')}"), "sujet": sujet,
+                 "proximite": p, "statut": "en_attente"}
+        piste["phrase"] = phrase_de_piste(piste)
+        pistes.append(piste)
+    return pistes
+
+
+def lire_pistes(fichier: Path) -> list[dict]:
+    try:
+        donnees = json.loads(fichier.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    liste = donnees.get("pistes") if isinstance(donnees, dict) else None
+    return [p for p in liste or [] if isinstance(p, dict) and p.get("id") and p.get("adresse")]
+
+
+def _rang(p: dict) -> tuple:
+    return (p.get("proximite", 0), p.get("etoiles", 0), str(p.get("date") or ""))
+
+
+def ajouter_pistes(fichier: Path, candidates: list[dict]) -> list[dict]:
+    """Relit le fichier juste avant d'écrire, ajoute au plus PISTES_PAR_RECHERCHE pistes nouvelles
+    (jamais une adresse déjà connue, même écartée), puis garde les PISTES_EN_ATTENTE plus proches du cap."""
+    pistes = lire_pistes(fichier)
+    connues = {p["adresse"] for p in pistes}
+    nouvelles = []
+    for c in sorted(candidates, key=_rang, reverse=True):
+        if c["adresse"] not in connues and len(nouvelles) < PISTES_PAR_RECHERCHE:
+            connues.add(c["adresse"])
+            nouvelles.append(c)
+    if not nouvelles:
+        return []
+    pistes += nouvelles
+    attente = sorted((p for p in pistes if p.get("statut") == "en_attente"), key=_rang, reverse=True)
+    trop = {id(p) for p in attente[PISTES_EN_ATTENTE:]}
+    pistes = [p for p in pistes if id(p) not in trop]
+    _ecrire(fichier, json.dumps({"pistes": pistes}, ensure_ascii=False, indent=1) + "\n")
+    gardees = {id(p) for p in pistes}
+    return [p for p in nouvelles if id(p) in gardees]
+
+
+def changer_piste(fichier: Path, ident: str, statut: str) -> dict | None:
+    """Une piste en attente devient retenue ou écartée (relue juste avant d'écrire). Une piste écartée
+    reste dans le fichier pour ne jamais être reproposée."""
+    if statut not in STATUTS_PISTE[1:]:
+        return None
+    pistes = lire_pistes(fichier)
+    piste = next((p for p in pistes if p.get("id") == ident), None)
+    if not piste or piste.get("statut") != "en_attente":
+        return None
+    piste["statut"] = statut
+    _ecrire(fichier, json.dumps({"pistes": pistes}, ensure_ascii=False, indent=1) + "\n")
+    return piste
+
+
 # --- Une recherche complète. ---
 
 def dossier_curiosite(dossier_noyau: Path) -> Path:
@@ -688,6 +830,10 @@ def rechercher(dossier_noyau: Path, memoire: Path | None = None, toile: Toile | 
         f.write(json.dumps(decouverte, ensure_ascii=False) + "\n")
     # Ce qui est appris s'ajoute à la fiche du sujet (le texte lu reste une donnée, rien d'autre).
     enrichir_fiche(dossier / "connaissances.json", sujet["nom"], sujet["cle"], decouverte["appris"], adresses, horodatage)
+    # Les documents proches du cap deviennent des pistes, proposées à l'utilisateur (rien n'est fait sans lui).
+    pistes = ajouter_pistes(dossier / "pistes.json", candidates_pistes(docs, sujet["nom"], horodatage))
+    if pistes:
+        decouverte["pistes"] = [p["id"] for p in pistes]
     signaler({"etape": "resultat", "decouverte": decouverte})
     return decouverte
 
@@ -746,6 +892,14 @@ def main(argv: list[str] | None = None) -> int:
             dire({"fiche": fiches.get(cle(argv[1]))})
         else:
             dire({"fiches": sorted(fiches.values(), key=lambda f: str(f.get("derniere") or ""), reverse=True)})
+        return 0
+    fichier_pistes = dossier_curiosite(dossier_noyau) / "pistes.json"
+    if argv[:1] == ["--pistes"]:
+        dire({"pistes": sorted(lire_pistes(fichier_pistes), key=_rang, reverse=True)})
+        return 0
+    if argv[:1] in (["--ecarter-piste"], ["--retenir-piste"]) and len(argv) > 1:
+        piste = changer_piste(fichier_pistes, argv[1], "ecartee" if argv[0] == "--ecarter-piste" else "retenue")
+        dire({"ok": bool(piste), "piste": piste})
         return 0
     verrou = _verrou(dossier_curiosite(dossier_noyau))
     if not verrou:

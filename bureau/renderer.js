@@ -759,6 +759,32 @@ function afficherFiche(f) {
   return li;
 }
 
+// Une piste pour m'améliorer : la phrase de Janova, le lien, et deux boutons. Rien n'est créé sans clic.
+function afficherPiste(p) {
+  const li = el('li');
+  const l1 = el('div', 'l1');
+  const inspirer = el('button', 'petit', 'M\'en inspirer');
+  inspirer.title = 'Ajouter au projet Janova une tâche non cochée pour étudier ce projet';
+  const ecarter = el('button', 'petit', 'Écarter');
+  ecarter.title = 'Ne plus me proposer cette piste';
+  const agir = (bouton, fn) => async () => {
+    inspirer.disabled = ecarter.disabled = true;
+    $('#pistes-erreur').textContent = '';
+    const r = await fn(p.id);
+    if (r.erreur) { $('#pistes-erreur').textContent = r.erreur; inspirer.disabled = ecarter.disabled = false; return; }
+    if (bouton === inspirer) $('#pistes-erreur').textContent = 'Tâche ajoutée (non cochée) au projet Janova.';
+    rafraichirRecherche();
+  };
+  inspirer.onclick = agir(inspirer, janova.curiosite.inspirer);
+  ecarter.onclick = agir(ecarter, janova.curiosite.ecarterPiste);
+  l1.append(el('span', 't', p.phrase), inspirer, ecarter);
+  const details = [p.source, p.source === 'GitHub' ? `${p.etoiles} étoile${p.etoiles > 1 ? 's' : ''}` : '', p.licence ? `licence ${p.licence}` : (p.source === 'GitHub' ? 'licence inconnue' : '')];
+  const sources = el('div', 'sources');
+  if (/^https:\/\//.test(p.adresse || '')) sources.append(lienWeb(p.adresse, p.titre));
+  li.append(l1, el('div', 'pourquoi', details.filter(Boolean).join(' · ')), sources);
+  return li;
+}
+
 const afficherSituation = (s) => { $('#curiosite-situation').textContent = s ? s.texte : ''; };
 
 async function rafraichirRecherche() {
@@ -778,6 +804,10 @@ async function rafraichirRecherche() {
   ulF.innerHTML = '';
   for (const f of etat.connaissances || []) ulF.append(afficherFiche(f));
   if (!(etat.connaissances || []).length) ulF.append(el('li', 'etat', 'Aucune fiche pour l\'instant.'));
+  const ulP = $('#recherche-pistes');
+  ulP.innerHTML = '';
+  for (const p of etat.pistes || []) ulP.append(afficherPiste(p));
+  if (!(etat.pistes || []).length) ulP.append(el('li', 'etat', 'Aucune piste pour l\'instant.'));
   const ulS = $('#recherche-sujets');
   ulS.innerHTML = '';
   for (const s of etat.sujets.slice(0, 12)) {

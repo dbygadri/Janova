@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('janova', {
     activer: appel('curiosite:activer'),
     ecarter: appel('curiosite:ecarter'),
     suggerer: appel('curiosite:suggerer'),
+    ecarterPiste: appel('curiosite:ecarterPiste'),
+    inspirer: appel('curiosite:inspirer'),
     chercher: appel('curiosite:chercher'),
     surEvenement: ecouter('curiosite:evenement'),
   },

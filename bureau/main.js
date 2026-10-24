@@ -346,10 +346,14 @@ ipcMain.handle('curiosite:etat', async () => ({
   decouvertes: curiosite.decouvertes(30),
   connaissances: curiosite.connaissances(),
   sujets: await curiosite.sujets().catch(() => []),
+  pistes: (await curiosite.pistes().catch(() => [])).filter((p) => p.statut === 'en_attente'),
 }));
 ipcMain.handle('curiosite:activer', (_e, oui) => { curiosite.activer(oui); return curiosite.reglages(); });
 ipcMain.handle('curiosite:ecarter', erreurs((nom) => curiosite.ecarter(nom)));
 ipcMain.handle('curiosite:suggerer', erreurs((nom) => curiosite.suggerer(nom)));
+// Pistes pour m'améliorer : rien ne devient une tâche sans le clic « M'en inspirer ».
+ipcMain.handle('curiosite:ecarterPiste', erreurs((id) => curiosite.ecarterPiste(id)));
+ipcMain.handle('curiosite:inspirer', erreurs((id) => curiosite.inspirer(id, projets.trouver(curiosite.PROJET_JANOVA))));
 // « Chercher maintenant » : même règle qu'en automatique pour les tâches, une recherche à la fois.
 ipcMain.handle('curiosite:chercher', () => {
   if (!surveillanceCuriosite || surveillanceCuriosite.etat.enCours) return false;
